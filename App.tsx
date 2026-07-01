@@ -1,20 +1,15 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { CatAvatar } from './components/CatAvatar';
-import { ChatBubble } from './components/ChatBubble';
+import { CatAvatar } from './features/avatar';
+import { ConversationPanel, appendMessage, appendTranscript, createMessageHistory, MessageHistory } from './features/conversation';
+import { ISpeechService, BrowserSpeechService, decodeAudioData, decodeBase64, useAudioPlayback } from './features/speech';
 import { BLACK_CAT_CONFIG, WHITE_CAT_CONFIG } from './constants';
-import { CatConfig, CatType, ChatMessage } from './types';
+import { CatConfig, CatType } from './types';
 import { LiveSessionManager, sendTextMessage, directTextToSpeech } from './services/geminiService';
-import { ISpeechService, BrowserSpeechService, RestApiSpeechService } from './services/speechRecognition';
 import { createCustomSpeechService } from './config';
-import { decodeAudioData, decodeBase64 } from './services/audioUtils';
-import { v4 as uuidv4 } from 'uuid';
 import { 
-    MicrophoneIcon, 
     UserIcon, 
     SparklesIcon,
-    StopIcon,
-    CpuChipIcon,
     SpeakerWaveIcon,
     SpeakerXMarkIcon,
     MusicalNoteIcon
@@ -26,10 +21,7 @@ function App() {
 
     // App State
     const [currentCat, setCurrentCat] = useState<CatConfig>(BLACK_CAT_CONFIG);
-    const [messages, setMessages] = useState<{ [key: string]: ChatMessage[] }>({
-        [CatType.BLACK]: [],
-        [CatType.WHITE]: []
-    });
+    const [messages, setMessages] = useState<MessageHistory>(createMessageHistory);
     const [inputText, setInputText] = useState('');
     
     // States for UI
@@ -53,8 +45,6 @@ function App() {
         const [useExternalASR, setUseExternalASR] = useState(true); // 默认使用讯飞
 
     // Audio Refs
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const nextStartTimeRef = useRef<number>(0);
     const liveSessionRef = useRef<LiveSessionManager | null>(null);
     const greetingInProgressRef = useRef<Set<string>>(new Set()); // 追踪正在进行的开场白
     
@@ -86,57 +76,25 @@ function App() {
         }
     };
 
-    // Initialize Audio Context for playing responses
-    useEffect(() => {
-        // 不检查 hasApiKey，因为使用自定义配置
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        return () => {
-            audioContextRef.current?.close();
-        };
-    }, []);
-
-    // Helper to add messages to current cat's history
     const addMessage = useCallback((role: 'user' | 'model', text: string) => {
-        setMessages(prev => ({
-            ...prev,
-            [currentCat.type]: [...prev[currentCat.type], { id: uuidv4(), role, text }]
-        }));
+        setMessages(previous => appendMessage(previous, currentCat.type, role, text));
     }, [currentCat.type]);
 
-    // Helper to play audio buffer
-    const playAudioBuffer = useCallback((buffer: AudioBuffer) => {
-        // If we receive audio, we are no longer "thinking"
+    const handlePlaybackStart = useCallback(() => {
         setIsProcessingVoice(false);
-
-        if (!audioContextRef.current) return;
-        
-        const ctx = audioContextRef.current;
-        const source = ctx.createBufferSource();
-        const gainNode = ctx.createGain();
-        // 使用当前的音量设置
-        console.log('🔊 [音量] 设置音量为:', volume, '(', Math.round(volume * 100), '%)');
-        gainNode.gain.setValueAtTime(volume, ctx.currentTime);
-        
-        source.buffer = buffer;
-        source.connect(gainNode);
-        gainNode.connect(ctx.destination);
-
-        const currentTime = ctx.currentTime;
-        // Schedule next chunk
-        const startTime = Math.max(currentTime, nextStartTimeRef.current);
-        source.start(startTime);
-        nextStartTimeRef.current = startTime + buffer.duration;
-
         setIsSpeaking(true);
-        source.onended = () => {
-             setTimeout(() => {
-                 if (ctx.currentTime >= nextStartTimeRef.current) {
-                     setIsSpeaking(false);
-                     setIsSinging(false);
-                 }
-             }, 100);
-        };
-    }, [volume]);
+    }, []);
+
+    const handlePlaybackIdle = useCallback(() => {
+        setIsSpeaking(false);
+        setIsSinging(false);
+    }, []);
+
+    const { audioContextRef, playAudioBuffer, resetPlayback, resetQueue } = useAudioPlayback({
+        volume,
+        onPlaybackStart: handlePlaybackStart,
+        onPlaybackIdle: handlePlaybackIdle
+    });
 
     // Initialize Live Session on Mount (or when cat changes)
     useEffect(() => {
@@ -158,24 +116,7 @@ function App() {
                if (role === 'model') setIsProcessingVoice(false);
 
                if (text.length > 0) {
-                    setMessages(prev => {
-                        const currentMessages = prev[currentCat.type];
-                        const lastMsg = currentMessages[currentMessages.length - 1];
-                        // Append to last message if same role and looks incomplete
-                        if (lastMsg && lastMsg.role === role && !['.', '!', '?'].includes(lastMsg.text.slice(-1))) {
-                             return {
-                                 ...prev,
-                                 [currentCat.type]: [
-                                     ...currentMessages.slice(0, -1),
-                                     { ...lastMsg, text: lastMsg.text + " " + text }
-                                 ]
-                             };
-                        }
-                        return {
-                            ...prev,
-                            [currentCat.type]: [...currentMessages, { id: uuidv4(), role, text }]
-                        };
-                    });
+                    setMessages(previous => appendTranscript(previous, currentCat.type, role, text));
                }
             },
             onTurnComplete: () => {
@@ -243,6 +184,9 @@ function App() {
     // 处理开始对话按钮点击
     const handleStart = async () => {
         console.log('🚀 [开始对话] 按钮点击');
+
+        // Enter the conversation immediately; audio initialization is optional.
+        setIsStarted(true);
         
         // 激活 AudioContext
         if (audioContextRef.current?.state === 'suspended') {
@@ -254,7 +198,6 @@ function App() {
             }
         }
         
-        setIsStarted(true);
         // 不在这里直接调用 sayGreeting，让 useEffect 处理
     };
 
@@ -277,7 +220,7 @@ function App() {
     // Handlers
     const handleToggleCat = () => {
         setCurrentCat(prev => prev.type === CatType.BLACK ? WHITE_CAT_CONFIG : BLACK_CAT_CONFIG);
-        nextStartTimeRef.current = 0;
+        resetQueue();
         setIsSpeaking(false);
         setIsListening(false);
         setIsProcessingVoice(false);
@@ -388,17 +331,7 @@ function App() {
         // 停止当前所有播放并重置状态
         setIsSpeaking(false);
         setIsSinging(false);
-        nextStartTimeRef.current = 0;
-        
-        // 重新创建音频上下文以停止所有当前播放
-        if (audioContextRef.current) {
-            try {
-                await audioContextRef.current.close();
-            } catch (e) {
-                console.warn('关闭音频上下文失败:', e);
-            }
-            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        }
+        await resetPlayback();
         
         // 直接调用 TTS，不经过大模型
         try {
@@ -537,8 +470,6 @@ function App() {
         setIsLoadingText(false);
         setIsListening(false);
 
-        // Stop playback cursor
-        nextStartTimeRef.current = 0;
 
         // Stop External
         if (useExternalASR) {
@@ -552,11 +483,8 @@ function App() {
             await liveSessionRef.current.connect();
         }
 
-        // Re-create audio context to stop current audio immediately
-        if (audioContextRef.current) {
-            await audioContextRef.current.close();
-            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        }
+        // Stop queued and active audio before accepting the next interaction.
+        await resetPlayback();
     };
 
     // Determine global loading/thinking state for Avatar
@@ -662,90 +590,20 @@ function App() {
                     />
                 </div>
 
-                {/* Chat History */}
-                <div className="px-4 mb-4 w-full">
-                     <ChatBubble messages={messages[currentCat.type]} />
-                </div>
-
-                {/* Controls */}
-                <div className="px-4 pb-6 w-full">
-                    <div className={`bg-white p-2 rounded-3xl shadow-xl border-4 relative transition-colors ${useExternalASR ? 'border-blue-200' : 'border-orange-100'}`}>
-                        <div className="flex items-center space-x-2">
-                            
-                            {/* Mic Button */}
-                            <button
-                                className={`p-3 rounded-full transition-all duration-200 active:scale-95 border-2 select-none touch-none
-                                    ${isListening 
-                                        ? 'bg-red-500 text-white border-red-600 shadow-inner scale-110' 
-                                        : showInterrupt 
-                                            ? 'bg-gray-200 text-gray-400 border-gray-300 cursor-not-allowed opacity-50'
-                                            : useExternalASR 
-                                                ? 'bg-blue-50 text-blue-500 border-blue-200 hover:bg-blue-100'
-                                                : 'bg-orange-50 text-orange-400 border-orange-200 hover:bg-orange-100'}
-                                `}
-                                onMouseDown={!showInterrupt ? startListening : undefined}
-                                onMouseUp={!showInterrupt ? stopListening : undefined}
-                                onMouseLeave={isListening ? stopListening : undefined}
-                                onTouchStart={!showInterrupt ? startListening : undefined}
-                                onTouchEnd={isListening ? stopListening : undefined}
-                                disabled={showInterrupt}
-                                title={useExternalASR ? "External ASR Active" : "Hold to Speak (Gemini Live)"}
-                            >
-                                <MicrophoneIcon className={`w-6 h-6 ${isListening ? 'animate-pulse' : ''}`} />
-                            </button>
-
-                            {/* Text Input */}
-                            <form onSubmit={(e) => { e.preventDefault(); handleTextSubmit(); }} className="flex-1 flex items-center bg-gray-50 rounded-full px-4 py-2 border-2 border-gray-200 focus-within:border-orange-400 transition-colors">
-                                <input 
-                                    type="text" 
-                                    value={inputText}
-                                    onChange={(e) => setInputText(e.target.value)}
-                                    placeholder={isListening ? "Listening..." : isProcessingVoice ? "Thinking..." : "Talk to me..."}
-                                    className="bg-transparent w-full outline-none text-gray-700 placeholder-gray-400"
-                                    disabled={isListening || isThinking}
-                                />
-                            </form>
-
-                            {/* Cat Paw Send Button OR Interrupt Button */}
-                            <button 
-                                onClick={showInterrupt ? handleInterrupt : () => handleTextSubmit()}
-                                disabled={(!inputText.trim() && !showInterrupt) || isListening}
-                                className={`p-2 rounded-full transition-all duration-200
-                                    ${((!inputText.trim() && !showInterrupt) || isListening) ? 'opacity-40 grayscale cursor-not-allowed' : 'hover:scale-105 active:scale-95'}
-                                `}
-                                title={showInterrupt ? "Stop" : "Send"}
-                            >
-                                 {showInterrupt ? (
-                                    <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center shadow-lg border-b-4 border-red-700">
-                                        <StopIcon className="w-6 h-6 text-white" />
-                                    </div>
-                                 ) : (
-                                     <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center shadow-lg border-b-4 border-orange-700">
-                                        {/* Custom SVG Paw Icon */}
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M12 13C14.2091 13 16 11.2091 16 9C16 6.79086 14.2091 5 12 5C9.79086 5 8 6.79086 8 9C8 11.2091 9.79086 13 12 13Z" fill="white"/>
-                                            <path d="M4.5 11C5.88071 11 7 9.88071 7 8.5C7 7.11929 5.88071 6 4.5 6C3.11929 6 2 7.11929 2 8.5C2 9.88071 3.11929 11 4.5 11Z" fill="white"/>
-                                            <path d="M19.5 11C20.8807 11 22 9.88071 22 8.5C22 7.11929 20.8807 6 19.5 6C18.1193 6 17 7.11929 17 8.5C17 9.88071 18.1193 11 19.5 11Z" fill="white"/>
-                                            <path d="M8.5 15.5C8.5 16.8807 7.38071 18 6 18C4.61929 18 3.5 16.8807 3.5 15.5C3.5 14.1193 4.61929 13 6 13C7.38071 13 8.5 14.1193 8.5 15.5Z" fill="white"/>
-                                            <path d="M20.5 15.5C20.5 16.8807 19.3807 18 18 18C16.6193 18 15.5 16.8807 15.5 15.5C15.5 14.1193 16.6193 13 18 13C19.3807 13 20.5 14.1193 20.5 15.5Z" fill="white"/>
-                                            <path d="M12 22C15.3137 22 18 19.3137 18 16H6C6 19.3137 8.68629 22 12 22Z" fill="white"/>
-                                        </svg>
-                                     </div>
-                                 )}
-                            </button>
-                        </div>
-                    </div>
-                    <p className="text-center text-[10px] text-orange-300 mt-2 font-bold uppercase tracking-widest opacity-80">
-                        {isListening 
-                            ? "Listening..." 
-                            : isProcessingVoice 
-                                ? "Thinking..." 
-                                : useExternalASR 
-                                    ? "Hold Mic (Ext ASR)" 
-                                    : "Hold Mic to Chat"
-                        }
-                    </p>
-                </div>
+                <ConversationPanel
+                    messages={messages[currentCat.type]}
+                    inputText={inputText}
+                    isListening={isListening}
+                    isProcessingVoice={isProcessingVoice}
+                    isThinking={isThinking}
+                    showInterrupt={showInterrupt}
+                    useExternalASR={useExternalASR}
+                    onInputChange={setInputText}
+                    onStartListening={startListening}
+                    onStopListening={stopListening}
+                    onSubmit={() => handleTextSubmit()}
+                    onInterrupt={handleInterrupt}
+                />
             </div>
 
             {/* Floating Action Buttons - Bottom Right */}

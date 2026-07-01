@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intelligent-interaction.local/contracts/agent-states.json",
+  "title": "AgentState",
+  "type": "string",
+  "enum": ["idle", "listening", "recognizing", "thinking", "confirming", "acting", "speaking", "error"]
+}

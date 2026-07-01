@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intelligent-interaction.local/contracts/events.schema.json",
+  "title": "AgentEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "version", "session_id", "request_id", "timestamp", "data"],
+  "properties": {
+    "type": { "type": "string", "enum": ["client.message", "agent.state", "assistant.delta", "assistant.message", "tool.confirmation_required", "tool.result", "request.cancel", "request.cancelled", "error"] },
+    "version": { "const": "1.0" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "request_id": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "data": { "type": "object" }
+  }
+}

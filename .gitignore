@@ -14,6 +14,18 @@ release/
 .env.local
 api.config.ts
 
+# Refactor runtime artifacts
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite*
+backend/logs/
+unity/Library/
+unity/Temp/
+unity/Logs/
+apps/renderer/public/unity-build/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intelligent-interaction.local/contracts/errors.schema.json",
+  "title": "AgentError",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error_code", "message", "recoverable", "request_id"],
+  "properties": {
+    "error_code": { "type": "string", "minLength": 1 },
+    "message": { "type": "string", "minLength": 1 },
+    "recoverable": { "type": "boolean" },
+    "request_id": { "type": "string", "minLength": 1 },
+    "details": { "type": "object" }
+  }
+}
