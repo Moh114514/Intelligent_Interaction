@@ -11,7 +11,11 @@
     "contracts:generate": "node scripts/generate-contracts.mjs",
     "contracts:check": "node scripts/generate-contracts.mjs --check",
     "security:scan": "node scripts/scan-build-secrets.mjs",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test tests/contracts.test.mjs tests/source-boundaries.test.mjs",
+    "test:backend": "python -m pytest backend/tests -q",
+    "test:sidecar": "node --test --test-isolation=none tests/sidecar.integration.test.mjs",
+    "smoke:electron": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-test.ps1",
+    "verify:m1": "npm run verify && npm run test:backend && npm run test:sidecar",
     "verify": "npm run contracts:check && npm run typecheck && npm test && npm run build && npm run security:scan",
     "preview": "vite preview",
     "electron:dev": "set NODE_ENV=development&& electron .",
@@ -26,8 +30,11 @@
     "files": [
       "dist/**/*",
       "electron.cjs",
+      "apps/electron/**/*",
+      "backend/**/*",
       "package.json"
     ],
+    "asarUnpack": ["backend/**/*"],
     "win": {
       "target": ["nsis"],
       "icon": "dist/favicon.ico",

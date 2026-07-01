@@ -1,10 +1,53 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Notification } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
+const { SidecarManager } = require('./apps/electron/main/sidecar/manager.cjs');
 
 /** @type {import('http').Server | null} */
 let staticServer = null;
+let mainWindow = null;
+let sidecarManager = null;
+let isQuitting = false;
+const isSmokeTest = process.argv.includes('--smoke-test');
+
+function writeMainLog(level, message) {
+  const line = JSON.stringify({ timestamp: new Date().toISOString(), level, source: 'electron-main', message });
+  try {
+    const logDir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.appendFileSync(path.join(logDir, 'main.log'), `${line}\n`, 'utf8');
+  } catch (_) {
+    // Logging must not prevent application startup.
+  }
+}
+
+function publishBackendStatus(status) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('backend:status', status);
+}
+
+function setupIpc() {
+  ipcMain.handle('backend:get-connection', () => sidecarManager?.getConnection() || null);
+  ipcMain.handle('app:get-version', () => app.getVersion());
+  ipcMain.handle('dialog:open-file', async (_event, options = {}) => {
+    const safeOptions = {
+      title: typeof options.title === 'string' ? options.title : 'Select a file',
+      properties: Array.isArray(options.properties)
+        ? options.properties.filter((item) => ['openFile', 'multiSelections'].includes(item))
+        : ['openFile'],
+      filters: Array.isArray(options.filters) ? options.filters : undefined
+    };
+    return dialog.showOpenDialog(mainWindow, safeOptions);
+  });
+  ipcMain.handle('notification:show', (_event, options = {}) => {
+    if (!Notification.isSupported()) return false;
+    new Notification({
+      title: String(options.title || 'Garfield Chat'),
+      body: String(options.body || '')
+    }).show();
+    return true;
+  });
+}
 
 function ensureRuntimeConfigFile() {
   try {
@@ -122,14 +165,21 @@ function startStaticServer(distDir) {
 async function createWindow() {
   const win = new BrowserWindow({
     width: 420,
+    show: !isSmokeTest,
     height: 900,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
+      preload: path.join(__dirname, 'apps/electron/preload/index.cjs'),
     },
     autoHideMenuBar: true,
     resizable: true,
     icon: path.join(__dirname, 'dist/favicon.ico')
+  });
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
   });
 
   const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
@@ -147,7 +197,25 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  setupIpc();
+  sidecarManager = new SidecarManager({
+    rootDir: app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked') : __dirname,
+    logDir: path.join(app.getPath('userData'), 'logs', 'backend'),
+    log: writeMainLog
+  });
+  sidecarManager.on('status', publishBackendStatus);
+  try {
+    await sidecarManager.start();
+  } catch (error) {
+    writeMainLog('error', `Backend failed to start: ${error.message}`);
+  }
+
   await createWindow();
+  publishBackendStatus(sidecarManager.getStatus());
+  if (isSmokeTest) {
+    if (sidecarManager.getStatus().state !== 'ready') process.exitCode = 1;
+    setTimeout(() => app.quit(), 500);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -162,7 +230,13 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (!isQuitting && sidecarManager) {
+    event.preventDefault();
+    isQuitting = true;
+    sidecarManager.stop().finally(() => app.quit());
+    return;
+  }
   if (staticServer) {
     try {
       staticServer.close();

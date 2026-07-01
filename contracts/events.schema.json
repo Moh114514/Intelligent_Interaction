@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["type", "version", "session_id", "request_id", "timestamp", "data"],
   "properties": {
-    "type": { "type": "string", "enum": ["client.message", "agent.state", "assistant.delta", "assistant.message", "tool.confirmation_required", "tool.result", "request.cancel", "request.cancelled", "error"] },
+    "type": { "type": "string", "enum": ["client.message", "agent.state", "assistant.delta", "assistant.message", "tool.confirmation_required", "tool.result", "request.cancel", "request.cancelled", "diagnostics.echo.request", "diagnostics.echo.response", "backend.status", "error"] },
     "version": { "const": "1.0" },
     "session_id": { "type": "string", "minLength": 1 },
     "request_id": { "type": "string", "minLength": 1 },

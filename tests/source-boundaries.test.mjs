@@ -23,3 +23,19 @@ test('production Vite config substitutes the credential-free example', async () 
   assert.match(source, /api\.config\.example\.ts/);
   assert.match(source, /isProduction \? '' : env\.GEMINI_API_KEY/);
 });
+
+test('Electron preload exposes only the approved capability surface', async () => {
+  const preload = await read('apps/electron/preload/index.cjs');
+  const names = Array.from(preload.matchAll(/^\s{2}([a-zA-Z]+):/gm), (match) => match[1]).sort();
+  assert.deepEqual(names, [
+    'getAppVersion',
+    'getBackendConnection',
+    'onBackendStatus',
+    'openFileDialog',
+    'showNotification'
+  ]);
+  const main = await read('electron.cjs');
+  assert.match(main, /nodeIntegration:\s*false/);
+  assert.match(main, /contextIsolation:\s*true/);
+  assert.match(main, /sandbox:\s*true/);
+});

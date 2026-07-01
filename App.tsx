@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { CatAvatar } from './features/avatar';
+import { DiagnosticsPanel } from './features/diagnostics';
 import { ConversationPanel, appendMessage, appendTranscript, createMessageHistory, MessageHistory } from './features/conversation';
 import { ISpeechService, BrowserSpeechService, decodeAudioData, decodeBase64, useAudioPlayback } from './features/speech';
 import { BLACK_CAT_CONFIG, WHITE_CAT_CONFIG } from './constants';
@@ -570,6 +571,8 @@ function App() {
                     </button>
                 </div>
             </div>
+
+            <DiagnosticsPanel />
 
             {/* Main Content Area - Flex Column */}
             <div className="flex-1 w-full max-w-md flex flex-col relative z-10">

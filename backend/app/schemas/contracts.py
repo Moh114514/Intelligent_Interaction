@@ -23,6 +23,9 @@ class AgentEventType(str, Enum):
     TOOL_RESULT = "tool.result"
     REQUEST_CANCEL = "request.cancel"
     REQUEST_CANCELLED = "request.cancelled"
+    DIAGNOSTICS_ECHO_REQUEST = "diagnostics.echo.request"
+    DIAGNOSTICS_ECHO_RESPONSE = "diagnostics.echo.response"
+    BACKEND_STATUS = "backend.status"
     ERROR = "error"
 
 class ToolRiskLevel(str, Enum):
