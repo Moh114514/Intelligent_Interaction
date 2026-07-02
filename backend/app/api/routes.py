@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from backend.app import __version__
 from backend.app.api.auth import require_http_token, websocket_is_authorized
@@ -43,7 +44,29 @@ def create_router(settings: Settings) -> APIRouter:
         await websocket.accept(subprotocol="agent.v1")
         try:
             while True:
-                incoming = EventEnvelope.model_validate(await websocket.receive_json())
+                payload: Any = None
+                try:
+                    payload = await websocket.receive_json()
+                    incoming = EventEnvelope.model_validate(payload)
+                except (json.JSONDecodeError, ValidationError, TypeError, ValueError):
+                    session_id = payload.get("session_id", "unknown") if isinstance(payload, dict) else "unknown"
+                    request_id = payload.get("request_id", "unknown") if isinstance(payload, dict) else "unknown"
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "version": "1.0",
+                            "session_id": session_id or "unknown",
+                            "request_id": request_id or "unknown",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "data": {
+                                "error_code": "INVALID_EVENT",
+                                "message": "Invalid event envelope",
+                                "recoverable": True,
+                                "request_id": request_id or "unknown",
+                            },
+                        }
+                    )
+                    continue
                 if incoming.type == "diagnostics.echo.request":
                     outgoing = incoming.model_copy(
                         update={

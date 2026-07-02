@@ -56,3 +56,17 @@ def test_websocket_echo_and_rejects_unknown_event() -> None:
             error = websocket.receive_json()
             assert error["type"] == "error"
             assert error["data"]["error_code"] == "UNSUPPORTED_EVENT"
+
+            websocket.send_json({"type": "diagnostics.echo.request"})
+            invalid = websocket.receive_json()
+            assert invalid["type"] == "error"
+            assert invalid["data"]["error_code"] == "INVALID_EVENT"
+
+            websocket.send_text("{not-json")
+            invalid_json = websocket.receive_json()
+            assert invalid_json["data"]["error_code"] == "INVALID_EVENT"
+
+            websocket.send_json(event)
+            recovered = websocket.receive_json()
+            assert recovered["type"] == "diagnostics.echo.response"
+            assert recovered["request_id"] == event["request_id"]

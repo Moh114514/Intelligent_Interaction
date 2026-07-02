@@ -50,6 +50,16 @@ function requestHealth(connection, timeoutMs = 1000) {
   });
 }
 
+function createCancelledError() {
+  const error = new Error('Sidecar launch was cancelled');
+  error.code = 'SIDECAR_CANCELLED';
+  return error;
+}
+
+function isCancelledError(error) {
+  return error?.code === 'SIDECAR_CANCELLED';
+}
+
 class SidecarManager extends EventEmitter {
   constructor(options = {}) {
     super();
@@ -59,12 +69,14 @@ class SidecarManager extends EventEmitter {
     this.spawnImpl = options.spawnImpl || spawn;
     this.healthTimeoutMs = options.healthTimeoutMs || 15000;
     this.healthIntervalMs = options.healthIntervalMs || 200;
+    this.allocatePortImpl = options.allocatePortImpl || allocatePort;
     this.log = options.log || (() => {});
     this.child = null;
     this.connection = null;
     this.intentionalStop = false;
     this.restartBudget = 1;
     this.lastStatus = { state: 'stopped', detail: 'Backend has not started' };
+    this.lifecycleGeneration = 0;
   }
 
   getConnection() {
@@ -86,11 +98,31 @@ class SidecarManager extends EventEmitter {
     if (this.child && this.connection) return this.getConnection();
     this.intentionalStop = false;
     this.restartBudget = 1;
-    return this.launch();
+    const generation = ++this.lifecycleGeneration;
+    try {
+      return await this.launch(generation);
+    } catch (error) {
+      if (isCancelledError(error)) throw error;
+      if (this.restartBudget > 0) {
+        this.restartBudget -= 1;
+        this.emitStatus('restarting', 'Backend failed during startup; restarting once');
+        try {
+          return await this.launch(generation);
+        } catch (retryError) {
+          if (!isCancelledError(retryError)) this.emitStatus('failed', retryError.message);
+          throw retryError;
+        }
+      }
+      this.emitStatus('failed', error.message);
+      throw error;
+    }
   }
 
-  async launch() {
-    const port = await allocatePort();
+  async launch(generation = this.lifecycleGeneration) {
+    const port = await this.allocatePortImpl();
+    if (this.intentionalStop || generation !== this.lifecycleGeneration) {
+      throw createCancelledError();
+    }
     const token = crypto.randomBytes(32).toString('hex');
     const connection = {
       port,
@@ -118,19 +150,46 @@ class SidecarManager extends EventEmitter {
     child.stdout?.on('data', (chunk) => this.log('info', chunk.toString().trim()));
     child.stderr?.on('data', (chunk) => this.log('error', chunk.toString().trim()));
 
+    let rejectStartupFailure;
+    const startupFailure = new Promise((_, reject) => { rejectStartupFailure = reject; });
+    const onStartupError = (error) => rejectStartupFailure(error);
+    const onStartupExit = (code, signal) => rejectStartupFailure(
+      new Error(`Backend exited during startup (code=${code}, signal=${signal})`)
+    );
+    child.once('error', onStartupError);
+    child.once('exit', onStartupExit);
+
     try {
-      await this.waitUntilHealthy(child, connection);
+      await Promise.race([this.waitUntilHealthy(child, connection), startupFailure]);
     } catch (error) {
+      child.removeListener('error', onStartupError);
+      child.removeListener('exit', onStartupExit);
+      child.on('error', (lateError) => this.log('error', `Backend process error: ${lateError.message}`));
       if (this.child === child) this.child = null;
-      if (!child.killed) child.kill();
-      this.connection = null;
-      this.emitStatus('failed', error.message);
+      if (this.connection === connection) this.connection = null;
+      if (!child.killed) {
+        try { child.kill(); } catch (_) { /* Process already unavailable. */ }
+      }
+      if (this.intentionalStop || generation !== this.lifecycleGeneration) {
+        throw createCancelledError();
+      }
       throw error;
     }
 
-    if (this.child !== child) throw new Error('Backend process changed during startup');
-    this.emitStatus('ready', `Backend ready on port ${port}`);
+    child.removeListener('error', onStartupError);
+    child.removeListener('exit', onStartupExit);
+    if (this.intentionalStop || generation !== this.lifecycleGeneration) {
+      if (this.child === child) this.child = null;
+      if (this.connection === connection) this.connection = null;
+      if (!child.killed) child.kill();
+      throw createCancelledError();
+    }
+    if (this.child !== child || child.exitCode !== null) {
+      throw new Error('Backend process changed or exited during startup');
+    }
+    child.on('error', (error) => this.log('error', `Backend process error: ${error.message}`));
     child.once('exit', (code, signal) => this.handleExit(child, code, signal));
+    this.emitStatus('ready', `Backend ready on port ${port}`);
     return this.getConnection();
   }
 
@@ -161,7 +220,10 @@ class SidecarManager extends EventEmitter {
     if (this.restartBudget > 0) {
       this.restartBudget -= 1;
       this.emitStatus('restarting', 'Backend exited; restarting once');
-      this.launch().catch((error) => this.emitStatus('failed', error.message));
+      const generation = this.lifecycleGeneration;
+      this.launch(generation).catch((error) => {
+        if (!isCancelledError(error)) this.emitStatus('failed', error.message);
+      });
     } else {
       this.emitStatus('failed', 'Backend exited after restart budget was exhausted');
     }
@@ -169,6 +231,7 @@ class SidecarManager extends EventEmitter {
 
   async stop() {
     this.intentionalStop = true;
+    this.lifecycleGeneration += 1;
     const child = this.child;
     this.child = null;
     this.connection = null;

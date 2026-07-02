@@ -38,4 +38,5 @@ test('Electron preload exposes only the approved capability surface', async () =
   assert.match(main, /nodeIntegration:\s*false/);
   assert.match(main, /contextIsolation:\s*true/);
   assert.match(main, /sandbox:\s*true/);
+  assert.match(main, /did-finish-load/);
 });
