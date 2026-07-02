@@ -181,6 +181,11 @@ async function createWindow() {
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
+  win.webContents.once('did-finish-load', () => {
+    publishBackendStatus(sidecarManager?.getStatus() || {
+      state: 'stopped', detail: 'Backend manager is unavailable'
+    });
+  });
 
   const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 

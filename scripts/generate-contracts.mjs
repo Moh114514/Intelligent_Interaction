@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = async (path) => JSON.parse(await readFile(resolve(root, path), 'utf8'));
+export const normalizeText = (value) => value.replace(/\r\n/g, '\n');
 
 export async function renderContracts() {
   const [states, events, tools] = await Promise.all([
@@ -46,7 +47,7 @@ export async function generate({ check = false } = {}) {
     const path = resolve(root, relativePath);
     if (check) {
       const current = await readFile(path, 'utf8').catch(() => '');
-      if (current !== content) {
+      if (normalizeText(current) !== normalizeText(content)) {
         console.error(`Generated contract is stale: ${relativePath}`);
         stale = true;
       }

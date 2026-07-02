@@ -32,6 +32,9 @@ export function DiagnosticsPanel() {
     const next = await bridge.getBackendConnection();
     setConnection(next);
     if (next) {
+      setStatus({ state: 'ready', detail: 'Backend connection available' });
+    }
+    if (next) {
       try {
         const response = await fetch(`${next.httpUrl}/version`, {
           headers: { Authorization: `Bearer ${next.token}` }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { renderContracts } from '../scripts/generate-contracts.mjs';
+import { normalizeText, renderContracts } from '../scripts/generate-contracts.mjs';
 
 const readJson = async (path) => JSON.parse(await readFile(new URL(`../${path}`, import.meta.url), 'utf8'));
 
@@ -24,4 +24,8 @@ test('generated TypeScript and Python contracts come from the same schemas', asy
     assert.match(ts, new RegExp(`'${state}'`));
     assert.match(py, new RegExp(`"${state}"`));
   }
+});
+
+test('generated contract checks are insensitive to platform line endings', () => {
+  assert.equal(normalizeText('first\r\nsecond\r\n'), 'first\nsecond\n');
 });
