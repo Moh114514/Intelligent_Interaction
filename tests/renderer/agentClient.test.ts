@@ -78,7 +78,7 @@ describe('AgentClient', () => {
     setup();
     const client = new AgentClient();
     const deltas: string[] = [];
-    const request = client.sendMessage('session-1', CatType.BLACK, 'Hello', (delta) => deltas.push(delta));
+    const request = client.sendMessage('session-1', CatType.BLACK, 'Hello', { onDelta: (delta) => { deltas.push(delta); } });
     await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1));
 
     const socket = FakeWebSocket.instances[0];
@@ -93,6 +93,51 @@ describe('AgentClient', () => {
     expect(deltas).toEqual(['Hi', '!']);
   });
 
+  it('routes confirmation and sends one correlated decision', async () => {
+    setup();
+    const client = new AgentClient();
+    const confirmations: any[] = [];
+    const results: any[] = [];
+    const request = client.sendMessage('session-1', CatType.BLACK, 'Read file', {
+      onToolConfirmation: (confirmation) => confirmations.push(confirmation),
+      onToolResult: (result) => results.push(result)
+    });
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1));
+    const socket = FakeWebSocket.instances[0];
+
+    socket.receive(response('tool.confirmation_required', request.requestId, {
+      confirmation_id: 'confirm-1',
+      tool_call_id: 'call-1',
+      tool_name: 'files.read_text',
+      risk_level: 'L2',
+      summary: 'Read shared file: note.txt',
+      expires_at: new Date(Date.now() + 30_000).toISOString()
+    }));
+    expect(confirmations).toHaveLength(1);
+
+    client.respondToToolConfirmation('session-1', request.requestId, 'confirm-1', true);
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    expect(socket.sent[1]).toMatchObject({
+      type: 'tool.confirmation_response',
+      request_id: request.requestId,
+      data: { confirmation_id: 'confirm-1', approved: true }
+    });
+
+    socket.receive(response('error', request.requestId, {
+      error_code: 'INVALID_CONFIRMATION',
+      message: 'Expired',
+      recoverable: true
+    }));
+    socket.receive(response('tool.result', request.requestId, {
+      tool_call_id: 'call-1',
+      tool_name: 'files.read_text',
+      status: 'succeeded',
+      summary: 'Read shared file: note.txt'
+    }));
+    expect(results).toHaveLength(1);
+    socket.receive(response('assistant.message', request.requestId, { content: 'Done' }));
+    await expect(request.completion).resolves.toBe('Done');
+  });
   it('sends cancellation for the active correlation id', async () => {
     setup();
     const client = new AgentClient();

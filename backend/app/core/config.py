@@ -19,6 +19,10 @@ class Settings:
     llm_model: str = "deepseek-v4-flash"
     llm_timeout_seconds: float = 30.0
     llm_max_history_messages: int = 20
+    tool_shared_root: Path = Path.home() / "Documents" / "Garfield Chat Shared"
+    agent_max_tool_steps: int = 5
+    tool_timeout_seconds: float = 10.0
+    tool_confirmation_timeout_seconds: float = 30.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -45,4 +49,8 @@ class Settings:
             llm_model=os.getenv("LLM_MODEL", "deepseek-v4-flash"),
             llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
             llm_max_history_messages=max(2, int(os.getenv("LLM_MAX_HISTORY_MESSAGES", "20"))),
+            tool_shared_root=Path(os.getenv("TOOL_SHARED_ROOT", str(Path.home() / "Documents" / "Garfield Chat Shared"))),
+            agent_max_tool_steps=max(1, int(os.getenv("AGENT_MAX_TOOL_STEPS", "5"))),
+            tool_timeout_seconds=max(0.1, float(os.getenv("TOOL_TIMEOUT_SECONDS", "10"))),
+            tool_confirmation_timeout_seconds=max(1, float(os.getenv("TOOL_CONFIRMATION_TIMEOUT_SECONDS", "30"))),
         )

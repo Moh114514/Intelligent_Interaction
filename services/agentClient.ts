@@ -1,5 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
-import { AgentEvent } from '../generated/contracts';
+import {
+  AgentEvent,
+  AgentState,
+  ToolConfirmationRequiredData,
+  ToolResultData
+} from '../generated/contracts';
 import { CatType } from '../types';
 
 export class AgentClientError extends Error {
@@ -12,9 +17,16 @@ export class AgentClientError extends Error {
   }
 }
 
+export interface AgentMessageHandlers {
+  onDelta?: (text: string) => void;
+  onState?: (state: AgentState) => void;
+  onToolConfirmation?: (confirmation: ToolConfirmationRequiredData) => void;
+  onToolResult?: (result: ToolResultData) => void;
+}
+
 interface PendingRequest {
   sessionId: string;
-  onDelta?: (text: string) => void;
+  handlers: AgentMessageHandlers;
   resolve: (content: string) => void;
   reject: (error: AgentClientError) => void;
 }
@@ -33,7 +45,7 @@ export class AgentClient {
     sessionId: string,
     characterId: CatType,
     content: string,
-    onDelta?: (text: string) => void
+    handlers: AgentMessageHandlers = {}
   ): AgentRequest {
     const requestId = uuidv4();
     let resolve!: (content: string) => void;
@@ -42,7 +54,7 @@ export class AgentClient {
       resolve = nextResolve;
       reject = nextReject;
     });
-    this.pending.set(requestId, { sessionId, onDelta, resolve, reject });
+    this.pending.set(requestId, { sessionId, handlers, resolve, reject });
 
     void this.ensureSocket()
       .then((socket) => {
@@ -57,6 +69,17 @@ export class AgentClient {
       });
 
     return { requestId, completion };
+  }
+
+  respondToToolConfirmation(sessionId: string, requestId: string, confirmationId: string, approved: boolean): void {
+    const pending = this.pending.get(requestId);
+    if (!pending || pending.sessionId !== sessionId) return;
+    void this.ensureSocket().then((socket) => {
+      socket.send(JSON.stringify(this.envelope('tool.confirmation_response', sessionId, requestId, {
+        confirmation_id: confirmationId,
+        approved
+      })));
+    });
   }
 
   cancel(sessionId: string, requestId: string): void {
@@ -111,9 +134,22 @@ export class AgentClient {
     const pending = this.pending.get(event.request_id);
     if (!pending) return;
 
+    if (event.type === 'agent.state') {
+      const state = event.data.state;
+      if (typeof state === 'string') pending.handlers.onState?.(state as AgentState);
+      return;
+    }
     if (event.type === 'assistant.delta') {
       const delta = event.data.delta;
-      if (typeof delta === 'string') pending.onDelta?.(delta);
+      if (typeof delta === 'string') pending.handlers.onDelta?.(delta);
+      return;
+    }
+    if (event.type === 'tool.confirmation_required') {
+      pending.handlers.onToolConfirmation?.(event.data as unknown as ToolConfirmationRequiredData);
+      return;
+    }
+    if (event.type === 'tool.result') {
+      pending.handlers.onToolResult?.(event.data as unknown as ToolResultData);
       return;
     }
     if (event.type === 'assistant.message') {
@@ -129,6 +165,7 @@ export class AgentClient {
       return;
     }
     if (event.type === 'error') {
+      if (event.data.error_code === 'INVALID_CONFIRMATION') return;
       this.pending.delete(event.request_id);
       pending.reject(new AgentClientError(
         String(event.data.error_code || 'AGENT_ERROR'),
@@ -155,4 +192,4 @@ export class AgentClient {
     }
     this.pending.clear();
   }
-}
+}

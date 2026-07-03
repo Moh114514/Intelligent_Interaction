@@ -20,6 +20,7 @@ class AgentEventType(str, Enum):
     ASSISTANT_DELTA = "assistant.delta"
     ASSISTANT_MESSAGE = "assistant.message"
     TOOL_CONFIRMATION_REQUIRED = "tool.confirmation_required"
+    TOOL_CONFIRMATION_RESPONSE = "tool.confirmation_response"
     TOOL_RESULT = "tool.result"
     REQUEST_CANCEL = "request.cancel"
     REQUEST_CANCELLED = "request.cancelled"
@@ -50,6 +51,24 @@ class AssistantDeltaData(BaseModel):
 
 class AssistantMessageData(BaseModel):
     content: str = Field(min_length=1)
+
+class ToolConfirmationRequiredData(BaseModel):
+    confirmation_id: str
+    tool_call_id: str
+    tool_name: str
+    risk_level: str = Field(pattern=r"^L2$")
+    summary: str
+    expires_at: str
+
+class ToolConfirmationResponseData(BaseModel):
+    confirmation_id: str
+    approved: bool
+
+class ToolResultData(BaseModel):
+    tool_call_id: str
+    tool_name: str
+    status: str = Field(pattern=r"^(succeeded|denied|failed|timed_out|cancelled)$")
+    summary: str
 
 class AgentEvent(BaseModel):
     type: AgentEventType

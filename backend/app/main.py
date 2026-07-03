@@ -13,6 +13,8 @@ from backend.app.agent.runtime import AgentRuntime
 from backend.app.api.routes import create_router
 from backend.app.core.config import Settings
 from backend.app.core.logging import configure_logging
+from backend.app.tools import create_default_registry
+from backend.app.tools.audit import create_audit_logger
 from backend.app.providers import LLMProvider, OpenAICompatibleProvider
 
 
@@ -25,7 +27,15 @@ def create_app(settings: Settings | None = None, provider: LLMProvider | None = 
         model=resolved.llm_model,
         timeout_seconds=resolved.llm_timeout_seconds,
     )
-    agent_runtime = AgentRuntime(resolved_provider, max_history_messages=resolved.llm_max_history_messages)
+    registry = create_default_registry(resolved.tool_shared_root, timeout_seconds=resolved.tool_timeout_seconds)
+    audit_logger = create_audit_logger(resolved.log_dir)
+    agent_runtime = AgentRuntime(
+        resolved_provider,
+        registry,
+        audit_logger,
+        max_history_messages=resolved.llm_max_history_messages,
+        max_tool_steps=resolved.agent_max_tool_steps,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):

@@ -9,6 +9,8 @@ import { decodeAudioData, decodeBase64, useAudioPlayback } from './features/spee
 import { BLACK_CAT_CONFIG, WHITE_CAT_CONFIG } from './constants';
 import { CatConfig, CatType } from './types';
 import { AgentClient, AgentClientError } from './services/agentClient';
+import { ToolConfirmationModal } from './components/ToolConfirmationModal';
+import { ToolConfirmationRequiredData } from './generated/contracts';
 import { createCustomSpeechService } from './config';
 import { synthesizeSpeech } from './services/xunfeiTts';
 
@@ -25,6 +27,11 @@ function App() {
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [showFishAnimation, setShowFishAnimation] = useState(false);
   const [showAngryCat, setShowAngryCat] = useState(false);
+  const [pendingToolConfirmation, setPendingToolConfirmation] = useState<{
+    sessionId: string;
+    requestId: string;
+    confirmation: ToolConfirmationRequiredData;
+  } | null>(null);
   const [isStarted, setIsStarted] = useState(false);
   const [hasGreeted, setHasGreeted] = useState<Record<CatType, boolean>>({
     [CatType.BLACK]: false,
@@ -74,9 +81,19 @@ function App() {
   const generate = useCallback(async (prompt: string, cat: CatConfig, speakResult = true) => {
     const sessionId = sessionIdsRef.current[cat.type];
     let streamed = '';
-    const request = agentClientRef.current.sendMessage(sessionId, cat.type, prompt, (delta) => {
-      streamed += delta;
-      setMessages((previous) => upsertModelMessage(previous, cat.type, request.requestId, streamed));
+    const request = agentClientRef.current.sendMessage(sessionId, cat.type, prompt, {
+      onDelta: (delta) => {
+        streamed += delta;
+        setMessages((previous) => upsertModelMessage(previous, cat.type, request.requestId, streamed));
+      },
+      onToolConfirmation: (confirmation) => {
+        setPendingToolConfirmation({ sessionId, requestId: request.requestId, confirmation });
+      },
+      onToolResult: (result) => {
+        setPendingToolConfirmation((previous) => (
+          previous?.confirmation.tool_call_id === result.tool_call_id ? null : previous
+        ));
+      }
     });
     activeRequestRef.current = { requestId: request.requestId, sessionId };
     try {
@@ -93,6 +110,7 @@ function App() {
       throw error;
     } finally {
       if (activeRequestRef.current?.requestId === request.requestId) activeRequestRef.current = null;
+      setPendingToolConfirmation((previous) => previous?.requestId === request.requestId ? null : previous);
     }
   }, [speak]);
 
@@ -211,6 +229,18 @@ function App() {
     );
   };
 
+  const handleToolDecision = useCallback((approved: boolean) => {
+    const pending = pendingToolConfirmation;
+    if (!pending) return;
+    agentClientRef.current.respondToToolConfirmation(
+      pending.sessionId,
+      pending.requestId,
+      pending.confirmation.confirmation_id,
+      approved
+    );
+    setPendingToolConfirmation(null);
+  }, [pendingToolConfirmation]);
+
   const handleInterrupt = async () => {
     const active = activeRequestRef.current;
     if (active) agentClientRef.current.cancel(active.sessionId, active.requestId);
@@ -219,6 +249,7 @@ function App() {
     setIsProcessingVoice(false);
     setIsLoadingText(false);
     setIsSpeaking(false);
+    setPendingToolConfirmation(null);
     await resetPlayback();
   };
 
@@ -303,6 +334,13 @@ function App() {
           <span className="text-2xl">🐟</span>
         </button>
       </div>
+
+      {pendingToolConfirmation && (
+        <ToolConfirmationModal
+          confirmation={pendingToolConfirmation.confirmation}
+          onDecision={handleToolDecision}
+        />
+      )}
 
       {showFishAnimation && (
         <div className="fixed inset-0 pointer-events-none z-40 overflow-hidden">

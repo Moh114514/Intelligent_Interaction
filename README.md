@@ -29,15 +29,26 @@ Python Agent configuration:
 - `LLM_MODEL` (default `deepseek-chat`)
 - `LLM_TIMEOUT_SECONDS` (default `30`)
 - `LLM_MAX_HISTORY_MESSAGES` (default `20`)
+- `AGENT_MAX_TOOL_STEPS` (default `5`)
+- `TOOL_TIMEOUT_SECONDS` (default `10`)
+- `TOOL_CONFIRMATION_TIMEOUT_SECONDS` (default `30`)
+- `TOOL_SHARED_ROOT` (default `%USERPROFILE%DocumentsGarfield Chat Shared`)
 
 Development reads `backend/.env.local`. Packaged builds read `%APPDATA%\Garfield Chat\backend.env`.
 
 Speech credentials remain in ignored `api.config.ts` until their phase 7 migration.
+
+## Local tools
+
+The Python Agent exposes only allowlisted tools. Time and basic system information are L0. Opening approved URLs/apps, clipboard text and file-name search are L1. Reading an approved UTF-8 text file is L2 and always requires a one-time confirmation. Command execution, deletion, credentials and messaging are not available.
+
+File search and reads are limited to the shared directory. Supported extensions are `.txt`, `.md`, `.json`, `.csv` and `.log`; files are limited to 64 KiB. Tool audit records are written to `tool-audit.jsonl` without clipboard or file contents.
 
 ## Verification
 
 - `npm run verify:m1`: M1 regression suite
 - `npm run test:renderer`: AgentClient and streaming UI tests
 - `npm run verify:m2`: complete M2 suite
+- `npm run verify:m3`: complete M3 tool and M2 regression suite
 - `npm run electron:build`: Windows installer build
 - `npm run smoke:electron`: packaged startup and sidecar cleanup test

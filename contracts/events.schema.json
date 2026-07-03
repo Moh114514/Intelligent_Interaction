@@ -8,7 +8,7 @@
   "properties": {
     "type": {
       "type": "string",
-      "enum": ["client.message", "agent.state", "assistant.delta", "assistant.message", "tool.confirmation_required", "tool.result", "request.cancel", "request.cancelled", "diagnostics.echo.request", "diagnostics.echo.response", "backend.status", "error"]
+      "enum": ["client.message", "agent.state", "assistant.delta", "assistant.message", "tool.confirmation_required", "tool.confirmation_response", "tool.result", "request.cancel", "request.cancelled", "diagnostics.echo.request", "diagnostics.echo.response", "backend.status", "error"]
     },
     "version": { "const": "1.0" },
     "session_id": { "type": "string", "minLength": 1 },
@@ -44,6 +44,39 @@
       "additionalProperties": false,
       "required": ["content"],
       "properties": { "content": { "type": "string", "minLength": 1 } }
+    },
+    "toolConfirmationRequiredData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confirmation_id", "tool_call_id", "tool_name", "risk_level", "summary", "expires_at"],
+      "properties": {
+        "confirmation_id": { "type": "string", "minLength": 1 },
+        "tool_call_id": { "type": "string", "minLength": 1 },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "risk_level": { "const": "L2" },
+        "summary": { "type": "string", "minLength": 1 },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "toolConfirmationResponseData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confirmation_id", "approved"],
+      "properties": {
+        "confirmation_id": { "type": "string", "minLength": 1 },
+        "approved": { "type": "boolean" }
+      }
+    },
+    "toolResultData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool_call_id", "tool_name", "status", "summary"],
+      "properties": {
+        "tool_call_id": { "type": "string", "minLength": 1 },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["succeeded", "denied", "failed", "timed_out", "cancelled"] },
+        "summary": { "type": "string", "minLength": 1 }
+      }
     }
   },
   "allOf": [
@@ -62,6 +95,18 @@
     {
       "if": { "properties": { "type": { "const": "assistant.message" } } },
       "then": { "properties": { "data": { "$ref": "#/$defs/assistantMessageData" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "tool.confirmation_required" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/toolConfirmationRequiredData" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "tool.confirmation_response" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/toolConfirmationResponseData" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "tool.result" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/toolResultData" } } }
     }
   ]
 }
