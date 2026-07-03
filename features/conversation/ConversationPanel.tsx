@@ -10,7 +10,6 @@ interface ConversationPanelProps {
   isProcessingVoice: boolean;
   isThinking: boolean;
   showInterrupt: boolean;
-  useExternalASR: boolean;
   onInputChange: (value: string) => void;
   onStartListening: () => void;
   onStopListening: () => void;
@@ -20,24 +19,24 @@ interface ConversationPanelProps {
 
 export function ConversationPanel({
   messages, inputText, isListening, isProcessingVoice, isThinking,
-  showInterrupt, useExternalASR, onInputChange, onStartListening,
+  showInterrupt, onInputChange, onStartListening,
   onStopListening, onSubmit, onInterrupt
 }: ConversationPanelProps) {
   return (
     <>
       <div className="px-4 mb-4 w-full"><ChatBubble messages={messages} /></div>
       <div className="px-4 pb-6 w-full">
-        <div className={`bg-white p-2 rounded-3xl shadow-xl border-4 relative transition-colors ${useExternalASR ? 'border-blue-200' : 'border-orange-100'}`}>
+        <div className="bg-white p-2 rounded-3xl shadow-xl border-4 border-blue-200 relative transition-colors">
           <div className="flex items-center space-x-2">
             <button
-              className={`p-3 rounded-full transition-all duration-200 active:scale-95 border-2 select-none touch-none ${isListening ? 'bg-red-500 text-white border-red-600 shadow-inner scale-110' : showInterrupt ? 'bg-gray-200 text-gray-400 border-gray-300 cursor-not-allowed opacity-50' : useExternalASR ? 'bg-blue-50 text-blue-500 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-400 border-orange-200 hover:bg-orange-100'}`}
+              className={`p-3 rounded-full transition-all duration-200 active:scale-95 border-2 select-none touch-none ${isListening ? 'bg-red-500 text-white border-red-600 shadow-inner scale-110' : showInterrupt ? 'bg-gray-200 text-gray-400 border-gray-300 cursor-not-allowed opacity-50' : 'bg-blue-50 text-blue-500 border-blue-200 hover:bg-blue-100'}`}
               onMouseDown={!showInterrupt ? onStartListening : undefined}
               onMouseUp={!showInterrupt ? onStopListening : undefined}
               onMouseLeave={isListening ? onStopListening : undefined}
               onTouchStart={!showInterrupt ? onStartListening : undefined}
               onTouchEnd={isListening ? onStopListening : undefined}
               disabled={showInterrupt}
-              title={useExternalASR ? 'External ASR Active' : 'Hold to Speak (Gemini Live)'}
+              title="Hold to speak"
             >
               <MicrophoneIcon className={`w-6 h-6 ${isListening ? 'animate-pulse' : ''}`} />
             </button>
@@ -66,7 +65,7 @@ export function ConversationPanel({
           </div>
         </div>
         <p className="text-center text-[10px] text-orange-300 mt-2 font-bold uppercase tracking-widest opacity-80">
-          {isListening ? 'Listening...' : isProcessingVoice ? 'Thinking...' : useExternalASR ? 'Hold Mic (Ext ASR)' : 'Hold Mic to Chat'}
+          {isListening ? 'Listening...' : isProcessingVoice ? 'Thinking...' : 'Hold Mic to Chat'}
         </p>
       </div>
     </>

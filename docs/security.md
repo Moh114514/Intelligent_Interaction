@@ -1,9 +1,11 @@
 # Security baseline
 
-- `.env.local` and `api.config.ts` are local-only and ignored by Git.
-- Production Vite builds replace `api.config.ts` with `api.config.example.ts` and do not inject `GEMINI_API_KEY`.
-- `npm run security:scan` rejects common key formats and any exact credential values found in local configuration files.
-- Development mode temporarily retains the legacy direct-provider path so phase 0-1 behavior can be verified.
-- Production provider credentials must not be restored to Renderer. Phase 4 moves LLM credentials to the authenticated Python sidecar; phase 7 does the same for ASR/TTS.
+- LLM credentials exist only in the Python sidecar environment.
+- Development reads the ignored `backend/.env.local`; packaged builds read `%APPDATA%\Garfield Chat\backend.env`.
+- The Renderer receives only the authenticated loopback connection details through preload.
+- `api.config.ts` is local-only and contains speech-provider configuration until phase 7.
+- Production Vite builds replace `api.config.ts` with the credential-free example.
+- `npm run security:scan` rejects common credential formats and exact local credential values in build output.
+- Provider errors returned to the Renderer never include credentials or raw provider response bodies.
 
-Any credential that existed in a historical bundle must be revoked at its provider. Removing it from the repository or rebuilding does not revoke it.
+Any credential that appeared in a historical build must be revoked at its provider. Removing it from Git does not revoke it.

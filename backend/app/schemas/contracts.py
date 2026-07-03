@@ -28,11 +28,28 @@ class AgentEventType(str, Enum):
     BACKEND_STATUS = "backend.status"
     ERROR = "error"
 
+class CharacterId(str, Enum):
+    BLACK = "BLACK"
+    WHITE = "WHITE"
+
 class ToolRiskLevel(str, Enum):
     L0 = "L0"
     L1 = "L1"
     L2 = "L2"
     L3 = "L3"
+
+class ClientMessageData(BaseModel):
+    content: str = Field(min_length=1)
+    character_id: CharacterId
+
+class AgentStateData(BaseModel):
+    state: AgentState
+
+class AssistantDeltaData(BaseModel):
+    delta: str = Field(min_length=1)
+
+class AssistantMessageData(BaseModel):
+    content: str = Field(min_length=1)
 
 class AgentEvent(BaseModel):
     type: AgentEventType

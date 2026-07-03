@@ -6,17 +6,26 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
-
 from fastapi.middleware.cors import CORSMiddleware
+
 from backend.app import __version__
+from backend.app.agent.runtime import AgentRuntime
 from backend.app.api.routes import create_router
 from backend.app.core.config import Settings
 from backend.app.core.logging import configure_logging
+from backend.app.providers import LLMProvider, OpenAICompatibleProvider
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, provider: LLMProvider | None = None) -> FastAPI:
     resolved = settings or Settings.from_env()
     log_path = configure_logging(resolved.log_dir, resolved.log_level)
+    resolved_provider = provider or OpenAICompatibleProvider(
+        api_key=resolved.llm_api_key,
+        base_url=resolved.llm_base_url,
+        model=resolved.llm_model,
+        timeout_seconds=resolved.llm_timeout_seconds,
+    )
+    agent_runtime = AgentRuntime(resolved_provider, max_history_messages=resolved.llm_max_history_messages)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -39,7 +48,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved
     app.state.log_path = str(log_path)
-    app.include_router(create_router(resolved))
+    app.state.agent_runtime = agent_runtime
+    app.include_router(create_router(resolved, agent_runtime))
     return app
 
 

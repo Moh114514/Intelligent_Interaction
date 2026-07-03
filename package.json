@@ -6,7 +6,7 @@
   "main": "electron.cjs",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run clean:dist && vite build",
     "typecheck": "tsc --noEmit",
     "contracts:generate": "node scripts/generate-contracts.mjs",
     "contracts:check": "node scripts/generate-contracts.mjs --check",
@@ -19,7 +19,11 @@
     "verify": "npm run contracts:check && npm run typecheck && npm test && npm run build && npm run security:scan",
     "preview": "vite preview",
     "electron:dev": "set NODE_ENV=development&& electron .",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && npm run clean:release && electron-builder",
+    "test:renderer": "vitest run tests/renderer",
+    "verify:m2": "npm run verify:m1 && npm run test:renderer",
+    "clean:dist": "node scripts/clean-artifacts.mjs dist",
+    "clean:release": "node scripts/clean-artifacts.mjs release"
   },
   "build": {
     "appId": "com.garfield.chat",
@@ -34,9 +38,13 @@
       "backend/**/*",
       "package.json"
     ],
-    "asarUnpack": ["backend/**/*"],
+    "asarUnpack": [
+      "backend/**/*"
+    ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "dist/favicon.ico",
       "signAndEditExecutable": false
     },
@@ -48,7 +56,6 @@
     }
   },
   "dependencies": {
-    "@google/genai": "^1.30.0",
     "@heroicons/react": "^2.2.0",
     "@types/crypto-js": "^4.2.2",
     "crypto-js": "^4.2.0",
@@ -62,6 +69,7 @@
     "electron": "^39.2.3",
     "electron-builder": "^26.0.12",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^4.1.9"
   }
 }
