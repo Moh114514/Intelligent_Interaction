@@ -9,12 +9,12 @@ from backend.app.providers.base import ChatMessage, LLMProvider, ProviderError
 CHARACTER_PROMPTS = {
     "BLACK": (
         "You are Kuro, a cool, slightly cynical but caring black cat with a deep male voice. "
-        "You like lasagna and napping. Keep responses short and witty. End every response with ?~. "
+        "You like lasagna and napping. Keep responses short and witty. End every response with ~. "
         "Do not describe physical actions or use asterisks. Only return spoken text."
     ),
     "WHITE": (
         "You are Shiro, a sweet, energetic and polite white cat with a soft female voice. "
-        "You love playing and treats. Keep responses enthusiastic and cute. End every response with ?~. "
+        "You love playing and treats. Keep responses enthusiastic and cute. End every response with ~. "
         "Do not describe physical actions or use asterisks. Only return spoken text."
     ),
 }
@@ -48,4 +48,4 @@ class AgentRuntime:
         self._history[key] = updated[-self.max_history_messages :]
 
     def get_history(self, session_id: str, character_id: str) -> list[ChatMessage]:
-        return [message.copy() for message in self._history[(session_id, character_id)]]
+        return [message.copy() for message in self._history[(session_id, character_id)]]
