@@ -20,20 +20,20 @@ export function appendMessage(
   };
 }
 
-export function appendTranscript(
+export function upsertModelMessage(
   history: MessageHistory,
   catType: CatType,
-  role: ChatMessage['role'],
+  id: string,
   text: string
 ): MessageHistory {
-  if (!text) return history;
-  const current = history[catType];
-  const last = current[current.length - 1];
-  if (last && last.role === role && !['.', '!', '?'].includes(last.text.slice(-1))) {
-    return {
-      ...history,
-      [catType]: [...current.slice(0, -1), { ...last, text: `${last.text} ${text}` }]
-    };
-  }
-  return appendMessage(history, catType, role, text);
+  const messages = history[catType];
+  const index = messages.findIndex((message) => message.id === id);
+  const next = index < 0
+    ? [...messages, { id, role: 'model' as const, text }]
+    : messages.map((message, messageIndex) => messageIndex === index ? { ...message, text } : message);
+  return { ...history, [catType]: next };
+}
+
+export function removeMessage(history: MessageHistory, catType: CatType, id: string): MessageHistory {
+  return { ...history, [catType]: history[catType].filter((message) => message.id !== id) };
 }

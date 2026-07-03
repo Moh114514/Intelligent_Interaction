@@ -69,6 +69,7 @@ class SidecarManager extends EventEmitter {
     this.spawnImpl = options.spawnImpl || spawn;
     this.healthTimeoutMs = options.healthTimeoutMs || 15000;
     this.healthIntervalMs = options.healthIntervalMs || 200;
+    this.envFile = options.envFile || process.env.AGENT_ENV_FILE || null;
     this.allocatePortImpl = options.allocatePortImpl || allocatePort;
     this.log = options.log || (() => {});
     this.child = null;
@@ -139,7 +140,8 @@ class SidecarManager extends EventEmitter {
       AGENT_HOST: '127.0.0.1',
       AGENT_PORT: String(port),
       AGENT_AUTH_TOKEN: token,
-      AGENT_LOG_DIR: this.logDir
+      AGENT_LOG_DIR: this.logDir,
+      ...(this.envFile ? { AGENT_ENV_FILE: this.envFile } : {})
     };
     const child = this.spawnImpl(
       this.pythonCommand,

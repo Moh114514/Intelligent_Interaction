@@ -6,11 +6,62 @@
   "additionalProperties": false,
   "required": ["type", "version", "session_id", "request_id", "timestamp", "data"],
   "properties": {
-    "type": { "type": "string", "enum": ["client.message", "agent.state", "assistant.delta", "assistant.message", "tool.confirmation_required", "tool.result", "request.cancel", "request.cancelled", "diagnostics.echo.request", "diagnostics.echo.response", "backend.status", "error"] },
+    "type": {
+      "type": "string",
+      "enum": ["client.message", "agent.state", "assistant.delta", "assistant.message", "tool.confirmation_required", "tool.result", "request.cancel", "request.cancelled", "diagnostics.echo.request", "diagnostics.echo.response", "backend.status", "error"]
+    },
     "version": { "const": "1.0" },
     "session_id": { "type": "string", "minLength": 1 },
     "request_id": { "type": "string", "minLength": 1 },
     "timestamp": { "type": "string", "format": "date-time" },
     "data": { "type": "object" }
-  }
+  },
+  "$defs": {
+    "characterId": { "type": "string", "enum": ["BLACK", "WHITE"] },
+    "clientMessageData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "character_id"],
+      "properties": {
+        "content": { "type": "string", "minLength": 1 },
+        "character_id": { "$ref": "#/$defs/characterId" }
+      }
+    },
+    "agentStateData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": { "state": { "$ref": "agent-states.json" } }
+    },
+    "assistantDeltaData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delta"],
+      "properties": { "delta": { "type": "string", "minLength": 1 } }
+    },
+    "assistantMessageData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content"],
+      "properties": { "content": { "type": "string", "minLength": 1 } }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "client.message" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/clientMessageData" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "agent.state" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/agentStateData" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "assistant.delta" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/assistantDeltaData" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "assistant.message" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/assistantMessageData" } } }
+    }
+  ]
 }

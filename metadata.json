@@ -1,7 +1,4 @@
 {
-  "name": "Garfield Chat Live",
-  "description": "A cute anime-style voice chat app featuring Garfield-themed characters powered by Gemini 2.5 Native Audio Live API.",
-  "requestFramePermissions": [
-    "microphone"
-  ]
+  "name": "Garfield Chat",
+  "description": "A desktop character chat application backed by a local Python agent runtime."
 }

@@ -206,6 +206,9 @@ app.whenReady().then(async () => {
   sidecarManager = new SidecarManager({
     rootDir: app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked') : __dirname,
     logDir: path.join(app.getPath('userData'), 'logs', 'backend'),
+    envFile: app.isPackaged
+      ? path.join(app.getPath('appData'), 'Garfield Chat', 'backend.env')
+      : path.join(__dirname, 'backend', '.env.local'),
     log: writeMainLog
   });
   sidecarManager.on('status', publishBackendStatus);

@@ -431,7 +431,7 @@ export class XunfeiSpeechService implements ISpeechService {
         // 使用 MediaRecorder 获取音频数据
         // 注意：讯飞要求 16k 16bit 单声道 PCM
         // 浏览器默认录音通常是 48k 或 44.1k float32，需要转换
-        // 这里为了简化，使用 AudioContext + ScriptProcessor 进行处理（类似 geminiService 中的实现）
+        // 这里为了简化，使用 AudioContext + ScriptProcessor 进行处理（与通用 PCM 采集流程一致）
         
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
         const source = audioContext.createMediaStreamSource(this.stream);
