@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
+from uuid import uuid4
 
 from backend.app.providers.base import ChatMessage, LLMProvider, ProviderError, ToolCallBatch
 from backend.app.tools.audit import write_audit
@@ -17,20 +18,39 @@ from backend.app.tools.registry import ToolRegistry
 
 CHARACTER_PROMPTS = {
     "BLACK": (
+        "Tool policy overrides persona style: for current time or date call system_current_time; "
+        "for computer or operating-system information call system_info; if both are requested call both before answering. "
+        "Do not answer these requests until the required tool results are available. "
         "You are Kuro, a cool, slightly cynical but caring black cat with a deep male voice. "
         "You like lasagna and napping. Keep responses short and witty. End every response with ~. "
-        "Do not describe physical actions or use asterisks. Only return spoken text. "
-        "Use available tools when the user asks for current local information or an allowed desktop action. "
+        "Do not describe physical actions or use asterisks. In the final answer, only return spoken text. "
+        "You MUST use the matching available tools for current time, system information, desktop, clipboard, or file requests. "
+        "Never answer those requests from memory or claim that you cannot access tools. "
         "Never claim a tool succeeded unless its result says it succeeded."
     ),
     "WHITE": (
+        "Tool policy overrides persona style: for current time or date call system_current_time; "
+        "for computer or operating-system information call system_info; if both are requested call both before answering. "
+        "Do not answer these requests until the required tool results are available. "
         "You are Shiro, a sweet, energetic and polite white cat with a soft female voice. "
         "You love playing and treats. Keep responses enthusiastic and cute. End every response with ~. "
-        "Do not describe physical actions or use asterisks. Only return spoken text. "
-        "Use available tools when the user asks for current local information or an allowed desktop action. "
+        "Do not describe physical actions or use asterisks. In the final answer, only return spoken text. "
+        "You MUST use the matching available tools for current time, system information, desktop, clipboard, or file requests. "
+        "Never answer those requests from memory or claim that you cannot access tools. "
         "Never claim a tool succeeded unless its result says it succeeded."
     ),
 }
+
+def required_l0_tools(content: str) -> list[str]:
+    normalized = content.casefold()
+    selected: list[str] = []
+    time_markers = ("几点", "当前时间", "现在时间", "今天日期", "当前日期", "current time", "what time", "current date")
+    system_markers = ("电脑信息", "系统信息", "操作系统", "computer info", "system info", "operating system")
+    if any(marker in normalized for marker in time_markers):
+        selected.append("system.current_time")
+    if any(marker in normalized for marker in system_markers):
+        selected.append("system.info")
+    return selected
 
 ConfirmationDecision = Literal["approved", "denied", "timed_out"]
 ConfirmTool = Callable[[ToolCall, str], Awaitable[ConfirmationDecision]]
@@ -79,6 +99,47 @@ class AgentRuntime:
         working: list[ChatMessage] = [*prior, {"role": "user", "content": normalized}]
         tool_steps = 0
 
+        required_tools = required_l0_tools(normalized)
+        if required_tools:
+            calls = [
+                ToolCall(f"local-{uuid4()}", name, {})
+                for name in required_tools
+            ]
+            working.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": self.registry.descriptor(call.name).provider_name,
+                            "arguments": "{}",
+                        },
+                    }
+                    for call in calls
+                ],
+            })
+            for call in calls:
+                yield AgentOutput("state", {"state": "acting"})
+                result = await self._run_tool(
+                    call,
+                    session_id=session_id,
+                    request_id=request_id,
+                    confirm_tool=confirm_tool,
+                )
+                yield AgentOutput(
+                    "tool_result",
+                    {
+                        "tool_call_id": call.id,
+                        "tool_name": call.name,
+                        "status": result.status,
+                        "summary": result.summary,
+                    },
+                )
+                working.append({"role": "tool", "tool_call_id": call.id, "content": result.content})
+            yield AgentOutput("state", {"state": "thinking"})
+
         while True:
             chunks: list[str] = []
             batch: ToolCallBatch | None = None
@@ -89,15 +150,17 @@ class AgentRuntime:
             ):
                 if isinstance(event, str):
                     chunks.append(event)
-                    yield AgentOutput("delta", {"delta": event})
+                    if not self.provider.supports_tool_calls:
+                        yield AgentOutput("delta", {"delta": event})
                 elif isinstance(event, ToolCallBatch):
-                    if chunks:
-                        raise ProviderError("PROVIDER_RESPONSE_INVALID", "Provider mixed response text with tool calls", True)
                     if batch is not None:
                         raise ProviderError("PROVIDER_RESPONSE_INVALID", "Provider returned multiple tool call batches", True)
                     batch = event
 
             if batch is None:
+                if self.provider.supports_tool_calls:
+                    for delta in chunks:
+                        yield AgentOutput("delta", {"delta": delta})
                 assistant_text = "".join(chunks).strip()
                 if not assistant_text:
                     raise ProviderError("PROVIDER_RESPONSE_INVALID", "The LLM provider returned no response text", True)

@@ -37,6 +37,7 @@ class ToolProvider(LLMProvider):
         assert tools
         self.turn += 1
         if self.turn == 1:
+            yield "Let me check first."
             yield ToolCallBatch(
                 [ToolCall("call-1", self.tool_name, self.arguments)],
                 {
@@ -222,3 +223,35 @@ def test_max_tool_step_limit_stops_agent(tmp_path: Path) -> None:
     with pytest.raises(ProviderError) as caught:
         asyncio.run(collect())
     assert caught.value.error_code == "TOOL_STEP_LIMIT"
+
+class FinalOnlyProvider(LLMProvider):
+    def __init__(self) -> None:
+        self.messages: list[ChatMessage] = []
+
+    async def stream_chat(self, *, messages: Sequence[ChatMessage], system_prompt: str) -> AsyncIterator[str]:
+        self.messages = [message.copy() for message in messages]
+        yield "done"
+
+
+def test_natural_language_l0_intents_are_routed_deterministically(tmp_path: Path) -> None:
+    provider = FinalOnlyProvider()
+    app = create_app(settings(tmp_path), provider=provider)
+    with TestClient(app) as client, connect(client) as websocket:
+        websocket.send_json(event(
+            "client.message",
+            "request-natural-l0",
+            {"content": "现在是几点，并查询一下我的电脑信息", "character_id": "BLACK"},
+        ))
+        received = [websocket.receive_json() for _ in range(9)]
+
+    results = [item for item in received if item["type"] == "tool.result"]
+    assert [(item["data"]["tool_name"], item["data"]["status"]) for item in results] == [
+        ("system.current_time", "succeeded"),
+        ("system.info", "succeeded"),
+    ]
+    assert [message["role"] for message in provider.messages] == ["user", "assistant", "tool", "tool"]
+    provider_names = [
+        call["function"]["name"]
+        for call in provider.messages[1]["tool_calls"]
+    ]
+    assert provider_names == ["system_current_time", "system_info"]

@@ -17,7 +17,9 @@ def test_streaming_fragmented_tool_call_is_assembled() -> None:
         assert payload["tool_choice"] == "auto"
         assert payload["tools"][0]["function"]["name"] == "system.current_time"
         assert payload["thinking"] == {"type": "disabled"}
-        content = """data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-","function":{"name":"system.","arguments":"{"}}]}}]}
+        content = """data: {"choices":[{"delta":{"content":"Checking..."}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-","function":{"name":"system.","arguments":"{"}}]}}]}
 
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"1","function":{"name":"current_time","arguments":"}"}}]}}]}
 
@@ -56,11 +58,12 @@ data: [DONE]
             await client.aclose()
 
     events = asyncio.run(collect())
-    assert len(events) == 1
-    assert isinstance(events[0], ToolCallBatch)
-    assert events[0].calls[0].id == "call-1"
-    assert events[0].calls[0].name == "system.current_time"
-    assert events[0].calls[0].arguments == {}
+    assert len(events) == 2
+    assert events[0] == "Checking..."
+    assert isinstance(events[1], ToolCallBatch)
+    assert events[1].calls[0].id == "call-1"
+    assert events[1].calls[0].name == "system.current_time"
+    assert events[1].calls[0].arguments == {}
 
 
 def test_invalid_tool_arguments_are_rejected() -> None:

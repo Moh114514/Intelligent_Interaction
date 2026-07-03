@@ -66,7 +66,6 @@ class OpenAICompatibleProvider(LLMProvider):
         owns_client = self._client is None
         received = False
         tool_parts: dict[int, dict[str, str]] = {}
-        response_mode: str | None = None
         try:
             async with client.stream(
                 "POST",
@@ -94,17 +93,11 @@ class OpenAICompatibleProvider(LLMProvider):
                         raise ProviderError("PROVIDER_RESPONSE_INVALID", "The LLM provider returned an invalid stream event", True) from error
 
                     if isinstance(content, str) and content:
-                        if response_mode == "tools":
-                            raise ProviderError("PROVIDER_RESPONSE_INVALID", "Provider mixed response text with tool calls", True)
-                        response_mode = "text"
                         received = True
                         yield content
                     if not isinstance(fragments, list):
                         raise ProviderError("PROVIDER_RESPONSE_INVALID", "The provider returned invalid tool calls", True)
                     for fragment in fragments:
-                        if response_mode == "text":
-                            raise ProviderError("PROVIDER_RESPONSE_INVALID", "Provider mixed response text with tool calls", True)
-                        response_mode = "tools"
                         try:
                             index = int(fragment.get("index", 0))
                             function = fragment.get("function") or {}
