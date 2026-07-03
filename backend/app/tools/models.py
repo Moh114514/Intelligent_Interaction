@@ -22,11 +22,15 @@ class ToolDescriptor:
     parameters: dict[str, Any]
     timeout_seconds: float
 
+    @property
+    def provider_name(self) -> str:
+        return self.name.replace(".", "_")
+
     def provider_definition(self) -> dict[str, Any]:
         return {
             "type": "function",
             "function": {
-                "name": self.name,
+                "name": self.provider_name,
                 "description": self.description,
                 "parameters": self.parameters,
             },

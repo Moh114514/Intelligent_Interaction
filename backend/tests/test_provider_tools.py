@@ -16,6 +16,7 @@ def test_streaming_fragmented_tool_call_is_assembled() -> None:
         payload = json.loads(request.content)
         assert payload["tool_choice"] == "auto"
         assert payload["tools"][0]["function"]["name"] == "system.current_time"
+        assert payload["thinking"] == {"type": "disabled"}
         content = """data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-","function":{"name":"system.","arguments":"{"}}]}}]}
 
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"1","function":{"name":"current_time","arguments":"}"}}]}}]}

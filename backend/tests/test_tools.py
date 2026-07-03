@@ -41,16 +41,17 @@ def test_registry_exposes_only_l0_to_l2_and_validates_arguments(tmp_path: Path) 
     registry = create_default_registry(tmp_path, desktop=FakeDesktop())
     names = {item["function"]["name"] for item in registry.definitions()}
     assert names == {
-        "system.current_time",
-        "system.info",
-        "desktop.open_url",
-        "desktop.open_app",
-        "clipboard.read_text",
-        "clipboard.write_text",
-        "files.search_names",
-        "files.read_text",
+        "system_current_time",
+        "system_info",
+        "desktop_open_url",
+        "desktop_open_app",
+        "clipboard_read_text",
+        "clipboard_write_text",
+        "files_search_names",
+        "files_read_text",
     }
     assert all(registry.descriptor(name).risk_level != "L3" for name in names)
+    assert registry.canonical_name("files_read_text") == "files.read_text"
 
     with pytest.raises(ToolError, match="not available"):
         registry.descriptor("system.run_command")

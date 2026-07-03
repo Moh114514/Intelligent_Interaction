@@ -26,20 +26,25 @@ class RegisteredTool:
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, RegisteredTool] = {}
+        self._provider_aliases: dict[str, str] = {}
 
     def register(self, tool: RegisteredTool) -> None:
         if tool.descriptor.risk_level == "L3":
             raise ValueError("L3 tools cannot be registered")
-        if tool.descriptor.name in self._tools:
+        if tool.descriptor.name in self._tools or tool.descriptor.provider_name in self._provider_aliases:
             raise ValueError(f"Duplicate tool: {tool.descriptor.name}")
         Draft202012Validator.check_schema(tool.descriptor.parameters)
         self._tools[tool.descriptor.name] = tool
+        self._provider_aliases[tool.descriptor.provider_name] = tool.descriptor.name
 
     def definitions(self) -> list[dict[str, Any]]:
         return [tool.descriptor.provider_definition() for tool in self._tools.values()]
 
+    def canonical_name(self, name: str) -> str:
+        return self._provider_aliases.get(name, name)
+
     def descriptor(self, name: str) -> ToolDescriptor:
-        tool = self._tools.get(name)
+        tool = self._tools.get(self.canonical_name(name))
         if tool is None:
             raise ToolError("TOOL_NOT_ALLOWED", "The requested tool is not available")
         return tool.descriptor
@@ -75,7 +80,7 @@ class ToolRegistry:
         return ToolExecutionResult("succeeded", content, tool.summary(arguments))
 
     def _validated(self, name: str, arguments: dict[str, Any]) -> RegisteredTool:
-        tool = self._tools.get(name)
+        tool = self._tools.get(self.canonical_name(name))
         if tool is None or tool.descriptor.risk_level == "L3":
             raise ToolError("TOOL_NOT_ALLOWED", "The requested tool is not available")
         try:

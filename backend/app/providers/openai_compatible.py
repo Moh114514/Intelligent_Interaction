@@ -60,6 +60,7 @@ class OpenAICompatibleProvider(LLMProvider):
         if tools:
             payload["tools"] = list(tools)
             payload["tool_choice"] = "auto"
+            payload["thinking"] = {"type": "disabled"}
 
         client = self._client or httpx.AsyncClient(timeout=self.timeout_seconds)
         owns_client = self._client is None
@@ -75,7 +76,7 @@ class OpenAICompatibleProvider(LLMProvider):
             ) as response:
                 if response.status_code >= 400:
                     await response.aread()
-                    raise self._map_status(response.status_code)
+                    raise self._map_status(response.status_code, self._error_detail(response))
 
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
@@ -147,9 +148,23 @@ class OpenAICompatibleProvider(LLMProvider):
                 await client.aclose()
 
     @staticmethod
-    def _map_status(status_code: int) -> ProviderError:
+    def _error_detail(response: httpx.Response) -> str | None:
+        try:
+            payload = response.json()
+            detail = payload.get("error", {}).get("message")
+        except (ValueError, AttributeError):
+            detail = None
+        return detail[:300] if isinstance(detail, str) and detail else None
+
+    @staticmethod
+    def _map_status(status_code: int, detail: str | None = None) -> ProviderError:
         if status_code in {401, 403}:
             return ProviderError("PROVIDER_AUTH_ERROR", "The LLM provider rejected the configured credentials", False, status_code=status_code)
+        if status_code in {400, 404, 422}:
+            message = "The LLM provider rejected the request"
+            if detail:
+                message += f": {detail}"
+            return ProviderError("PROVIDER_REQUEST_INVALID", message, False, status_code=status_code)
         if status_code == 429:
             return ProviderError("PROVIDER_RATE_LIMITED", "The LLM provider rate limit was reached", True, status_code=status_code)
         return ProviderError("PROVIDER_UNAVAILABLE", "The LLM provider returned an error", status_code >= 500, status_code=status_code)

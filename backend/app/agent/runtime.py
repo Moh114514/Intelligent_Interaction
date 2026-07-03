@@ -106,7 +106,8 @@ class AgentRuntime:
                 return
 
             working.append(batch.assistant_message)
-            for call in batch.calls:
+            for provider_call in batch.calls:
+                call = ToolCall(provider_call.id, self.registry.canonical_name(provider_call.name), provider_call.arguments)
                 tool_steps += 1
                 if tool_steps > self.max_tool_steps:
                     raise ProviderError("TOOL_STEP_LIMIT", "The agent reached the maximum number of tool calls", True)
