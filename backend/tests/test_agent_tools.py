@@ -208,7 +208,7 @@ def test_max_tool_step_limit_stops_agent(tmp_path: Path) -> None:
     )
 
     async def collect() -> None:
-        async def confirm(_call: ToolCall, _summary: str):
+        async def confirm(_call: ToolCall, _summary: str, _details: dict[str, Any] | None):
             return "approved"
 
         async for _ in runtime.stream_response(
@@ -255,3 +255,40 @@ def test_natural_language_l0_intents_are_routed_deterministically(tmp_path: Path
         for call in provider.messages[1]["tool_calls"]
     ]
     assert provider_names == ["system_current_time", "system_info"]
+
+
+def test_denied_text_creation_has_no_filesystem_side_effect(tmp_path: Path) -> None:
+    from backend.app.tools.adapters import FileAdapter
+
+    target = tmp_path / "denied.txt"
+    files = FileAdapter(tmp_path / "shared", search_roots=[tmp_path])
+    registry = create_default_registry(files.root, files=files)
+    (tmp_path / "logs").mkdir()
+    runtime = AgentRuntime(
+        ToolProvider("files.create_text", {"path": str(target), "content": "must not be written"}),
+        registry,
+        create_audit_logger(tmp_path / "logs"),
+    )
+    outputs = []
+
+    async def collect() -> None:
+        async def deny(_call: ToolCall, _summary: str, details: dict[str, Any] | None):
+            assert details and details["target"].endswith("denied.txt")
+            assert details["content"] == "must not be written"
+            return "denied"
+
+        async for output in runtime.stream_response(
+            session_id="session-denied-write",
+            request_id="request-denied-write",
+            character_id="BLACK",
+            content="create the file",
+            confirm_tool=deny,
+        ):
+            outputs.append(output)
+
+    asyncio.run(collect())
+    assert not target.exists()
+    assert any(output.kind == "tool_result" and output.data["status"] == "denied" for output in outputs)
+    audit = (tmp_path / "logs" / "tool-audit.jsonl").read_text(encoding="utf-8")
+    assert "must not be written" not in audit
+    assert '"confirmation_result":"denied"' in audit

@@ -59,6 +59,7 @@ class ToolConfirmationRequiredData(BaseModel):
     risk_level: str = Field(pattern=r"^L2$")
     summary: str
     expires_at: str
+    details: dict[str, Any] | None = None
 
 class ToolConfirmationResponseData(BaseModel):
     confirmation_id: str

@@ -11,35 +11,11 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
+from backend.app.agent.prompts import PERSONAS, compose_system_prompt
 from backend.app.providers.base import ChatMessage, LLMProvider, ProviderError, ToolCallBatch
 from backend.app.tools.audit import write_audit
 from backend.app.tools.models import ToolCall, ToolError, ToolExecutionResult
 from backend.app.tools.registry import ToolRegistry
-
-CHARACTER_PROMPTS = {
-    "BLACK": (
-        "Tool policy overrides persona style: for current time or date call system_current_time; "
-        "for computer or operating-system information call system_info; if both are requested call both before answering. "
-        "Do not answer these requests until the required tool results are available. "
-        "You are Kuro, a cool, slightly cynical but caring black cat with a deep male voice. "
-        "You like lasagna and napping. Keep responses short and witty. End every response with ~. "
-        "Do not describe physical actions or use asterisks. In the final answer, only return spoken text. "
-        "You MUST use the matching available tools for current time, system information, desktop, clipboard, or file requests. "
-        "Never answer those requests from memory or claim that you cannot access tools. "
-        "Never claim a tool succeeded unless its result says it succeeded."
-    ),
-    "WHITE": (
-        "Tool policy overrides persona style: for current time or date call system_current_time; "
-        "for computer or operating-system information call system_info; if both are requested call both before answering. "
-        "Do not answer these requests until the required tool results are available. "
-        "You are Shiro, a sweet, energetic and polite white cat with a soft female voice. "
-        "You love playing and treats. Keep responses enthusiastic and cute. End every response with ~. "
-        "Do not describe physical actions or use asterisks. In the final answer, only return spoken text. "
-        "You MUST use the matching available tools for current time, system information, desktop, clipboard, or file requests. "
-        "Never answer those requests from memory or claim that you cannot access tools. "
-        "Never claim a tool succeeded unless its result says it succeeded."
-    ),
-}
 
 def required_l0_tools(content: str) -> list[str]:
     normalized = content.casefold()
@@ -53,7 +29,7 @@ def required_l0_tools(content: str) -> list[str]:
     return selected
 
 ConfirmationDecision = Literal["approved", "denied", "timed_out"]
-ConfirmTool = Callable[[ToolCall, str], Awaitable[ConfirmationDecision]]
+ConfirmTool = Callable[[ToolCall, str, dict[str, Any] | None], Awaitable[ConfirmationDecision]]
 
 
 @dataclass(frozen=True)
@@ -88,7 +64,7 @@ class AgentRuntime:
         content: str,
         confirm_tool: ConfirmTool,
     ) -> AsyncIterator[AgentOutput]:
-        if character_id not in CHARACTER_PROMPTS:
+        if character_id not in PERSONAS:
             raise ProviderError("INVALID_CHARACTER", "Unknown character_id", False)
         normalized = content.strip()
         if not normalized:
@@ -140,13 +116,16 @@ class AgentRuntime:
                 working.append({"role": "tool", "tool_call_id": call.id, "content": result.content})
             yield AgentOutput("state", {"state": "thinking"})
 
+        tool_definitions = self.registry.definitions()
+        system_prompt = compose_system_prompt(character_id, tool_definitions)
+
         while True:
             chunks: list[str] = []
             batch: ToolCallBatch | None = None
             async for event in self.provider.stream_turn(
                 messages=working,
-                system_prompt=CHARACTER_PROMPTS[character_id],
-                tools=self.registry.definitions(),
+                system_prompt=system_prompt,
+                tools=tool_definitions,
             ):
                 if isinstance(event, str):
                     chunks.append(event)
@@ -168,7 +147,11 @@ class AgentRuntime:
                 self._history[key] = [message.copy() for message in working[-self.max_history_messages :]]
                 return
 
-            working.append(batch.assistant_message)
+            assistant_message = batch.assistant_message.copy()
+            intermediate_text = "".join(chunks).strip()
+            if intermediate_text:
+                assistant_message["content"] = intermediate_text
+            working.append(assistant_message)
             for provider_call in batch.calls:
                 call = ToolCall(provider_call.id, self.registry.canonical_name(provider_call.name), provider_call.arguments)
                 tool_steps += 1
@@ -209,13 +192,15 @@ class AgentRuntime:
         started = time.perf_counter()
         risk = "unknown"
         safe_summary = "Rejected unavailable tool"
+        confirmation_result: str | None = None
         try:
             descriptor = self.registry.descriptor(call.name)
             risk = descriptor.risk_level
             safe_summary = self.registry.confirmation_summary(call.name, call.arguments)
 
             if risk == "L2":
-                decision = await confirm_tool(call, safe_summary)
+                decision = await confirm_tool(call, safe_summary, self.registry.confirmation_details(call.name, call.arguments))
+                confirmation_result = decision
                 if decision != "approved":
                     status = "timed_out" if decision == "timed_out" else "denied"
                     code = "TOOL_CONFIRMATION_TIMEOUT" if decision == "timed_out" else "TOOL_DENIED"
@@ -225,11 +210,11 @@ class AgentRuntime:
                         "Confirmation timed out" if decision == "timed_out" else "User denied the tool",
                         code,
                     )
-                    self._audit(session_id, request_id, call, risk, result, started, safe_summary)
+                    self._audit(session_id, request_id, call, risk, result, started, safe_summary, confirmation_result)
                     return result
 
             result = await self.registry.execute(call.name, call.arguments)
-            self._audit(session_id, request_id, call, risk, result, started, safe_summary)
+            self._audit(session_id, request_id, call, risk, result, started, safe_summary, confirmation_result)
             return result
         except ToolError as error:
             result = ToolExecutionResult(
@@ -238,11 +223,11 @@ class AgentRuntime:
                 error.message,
                 error.error_code,
             )
-            self._audit(session_id, request_id, call, risk, result, started, safe_summary)
+            self._audit(session_id, request_id, call, risk, result, started, safe_summary, confirmation_result)
             return result
         except asyncio.CancelledError:
             result = ToolExecutionResult("cancelled", '{"error":"request cancelled"}', "Tool cancelled", "REQUEST_CANCELLED")
-            self._audit(session_id, request_id, call, risk, result, started, safe_summary)
+            self._audit(session_id, request_id, call, risk, result, started, safe_summary, confirmation_result)
             raise
 
     def _audit(
@@ -254,6 +239,7 @@ class AgentRuntime:
         result: ToolExecutionResult,
         started: float,
         safe_summary: str,
+        confirmation_result: str | None,
     ) -> None:
         write_audit(
             self.audit_logger,
@@ -269,6 +255,7 @@ class AgentRuntime:
                 "resource": safe_summary,
                 "argument_keys": sorted(call.arguments),
                 "error_code": result.error_code,
+                "confirmation_result": confirmation_result,
             },
         )
 

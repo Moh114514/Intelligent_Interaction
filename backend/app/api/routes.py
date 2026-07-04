@@ -116,7 +116,7 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
             await send(error_payload(session_id=incoming.session_id, request_id=incoming.request_id, error_code=error_code, message=message, recoverable=recoverable))
 
         async def run_agent(incoming: EventEnvelope, message: ClientMessageData) -> None:
-            async def confirm_tool(call: ToolCall, summary: str) -> ConfirmationDecision:
+            async def confirm_tool(call: ToolCall, summary: str, details: dict[str, Any] | None) -> ConfirmationDecision:
                 confirmation_id = str(uuid4())
                 future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
                 pending_confirmations[incoming.request_id] = PendingConfirmation(confirmation_id, future)
@@ -132,6 +132,7 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
                         "risk_level": "L2",
                         "summary": summary,
                         "expires_at": expires_at.isoformat(),
+                        "details": details,
                     },
                 )
                 try:

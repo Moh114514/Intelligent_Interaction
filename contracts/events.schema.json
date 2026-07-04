@@ -55,7 +55,18 @@
         "tool_name": { "type": "string", "minLength": 1 },
         "risk_level": { "const": "L2" },
         "summary": { "type": "string", "minLength": 1 },
-        "expires_at": { "type": "string", "format": "date-time" }
+        "expires_at": { "type": "string", "format": "date-time" },
+        "details": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "target": { "type": "string" },
+            "operation": { "type": "string", "enum": ["search", "read", "create", "replace", "clipboard"] },
+            "content": { "type": ["string", "null"] },
+            "content_length": { "type": ["integer", "null"], "minimum": 0 },
+            "will_create_backup": { "type": "boolean" }
+          }
+        }
       }
     },
     "toolConfirmationResponseData": {

@@ -10,7 +10,9 @@ export interface AgentStateData { state: AgentState; }
 export interface AssistantDeltaData { delta: string; }
 export interface AssistantMessageData { content: string; }
 
-export interface ToolConfirmationRequiredData { confirmation_id: string; tool_call_id: string; tool_name: string; risk_level: 'L2'; summary: string; expires_at: string; }
+export interface ToolConfirmationDetails { target?: string; operation?: 'search' | 'read' | 'create' | 'replace' | 'clipboard'; content?: string | null; content_length?: number | null; will_create_backup?: boolean; }
+
+export interface ToolConfirmationRequiredData { confirmation_id: string; tool_call_id: string; tool_name: string; risk_level: 'L2'; summary: string; expires_at: string; details?: ToolConfirmationDetails | null; }
 export interface ToolConfirmationResponseData { confirmation_id: string; approved: boolean; }
 export type ToolResultStatus = 'succeeded' | 'denied' | 'failed' | 'timed_out' | 'cancelled';
 export interface ToolResultData { tool_call_id: string; tool_name: string; status: ToolResultStatus; summary: string; }

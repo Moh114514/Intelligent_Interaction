@@ -27,7 +27,8 @@ export async function renderContracts() {
 `export interface AgentStateData { state: AgentState; }\n` +
 `export interface AssistantDeltaData { delta: string; }\n` +
 `export interface AssistantMessageData { content: string; }\n\n` +
-`export interface ToolConfirmationRequiredData { confirmation_id: string; tool_call_id: string; tool_name: string; risk_level: 'L2'; summary: string; expires_at: string; }\n` +
+`export interface ToolConfirmationDetails { target?: string; operation?: 'search' | 'read' | 'create' | 'replace' | 'clipboard'; content?: string | null; content_length?: number | null; will_create_backup?: boolean; }\n
+export interface ToolConfirmationRequiredData { confirmation_id: string; tool_call_id: string; tool_name: string; risk_level: 'L2'; summary: string; expires_at: string; details?: ToolConfirmationDetails | null; }\n` +
 `export interface ToolConfirmationResponseData { confirmation_id: string; approved: boolean; }\n` +
 `export type ToolResultStatus = 'succeeded' | 'denied' | 'failed' | 'timed_out' | 'cancelled';\n` +
 `export interface ToolResultData { tool_call_id: string; tool_name: string; status: ToolResultStatus; summary: string; }\n\n` +
@@ -46,7 +47,7 @@ export async function renderContracts() {
 `class AgentStateData(BaseModel):\n    state: AgentState\n\n` +
 `class AssistantDeltaData(BaseModel):\n    delta: str = Field(min_length=1)\n\n` +
 `class AssistantMessageData(BaseModel):\n    content: str = Field(min_length=1)\n\n` +
-`class ToolConfirmationRequiredData(BaseModel):\n    confirmation_id: str\n    tool_call_id: str\n    tool_name: str\n    risk_level: str = Field(pattern=r"^L2$")\n    summary: str\n    expires_at: str\n\n` +
+`class ToolConfirmationRequiredData(BaseModel):\n    confirmation_id: str\n    tool_call_id: str\n    tool_name: str\n    risk_level: str = Field(pattern=r"^L2$")\n    summary: str\n    expires_at: str\n    details: dict[str, Any] | None = None\n\n` +
 `class ToolConfirmationResponseData(BaseModel):\n    confirmation_id: str\n    approved: bool\n\n` +
 `class ToolResultData(BaseModel):\n    tool_call_id: str\n    tool_name: str\n    status: str = Field(pattern=r"^(succeeded|denied|failed|timed_out|cancelled)$")\n    summary: str\n\n` +
 `class AgentEvent(BaseModel):\n    type: AgentEventType\n    version: str = Field(pattern=r"^1\\.0$")\n    session_id: str\n    request_id: str\n    timestamp: str\n    data: dict[str, Any]\n\n` +

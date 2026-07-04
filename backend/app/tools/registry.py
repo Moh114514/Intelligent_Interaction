@@ -14,6 +14,7 @@ from backend.app.tools.adapters import FileAdapter, WindowsDesktopAdapter
 from backend.app.tools.models import ToolDescriptor, ToolError, ToolExecutionResult
 
 Executor = Callable[[dict[str, Any]], Any]
+Details = Callable[[dict[str, Any]], dict[str, Any] | None]
 
 
 @dataclass
@@ -21,6 +22,7 @@ class RegisteredTool:
     descriptor: ToolDescriptor
     executor: Executor
     summary: Callable[[dict[str, Any]], str]
+    details: Details = lambda _arguments: None
 
 
 class ToolRegistry:
@@ -50,32 +52,21 @@ class ToolRegistry:
         return tool.descriptor
 
     def confirmation_summary(self, name: str, arguments: dict[str, Any]) -> str:
-        tool = self._validated(name, arguments)
-        return tool.summary(arguments)
+        return self._validated(name, arguments).summary(arguments)
+
+    def confirmation_details(self, name: str, arguments: dict[str, Any]) -> dict[str, Any] | None:
+        return self._validated(name, arguments).details(arguments)
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> ToolExecutionResult:
         tool = self._validated(name, arguments)
         try:
-            value = await asyncio.wait_for(
-                asyncio.to_thread(tool.executor, arguments),
-                timeout=tool.descriptor.timeout_seconds,
-            )
+            value = await asyncio.wait_for(asyncio.to_thread(tool.executor, arguments), timeout=tool.descriptor.timeout_seconds)
         except (asyncio.TimeoutError, TimeoutError):
             return ToolExecutionResult("timed_out", '{"error":"tool timed out"}', "Tool timed out", "TOOL_TIMEOUT")
         except ToolError as error:
-            return ToolExecutionResult(
-                "failed",
-                json.dumps({"error": error.message, "error_code": error.error_code}, ensure_ascii=False),
-                error.message,
-                error.error_code,
-            )
+            return ToolExecutionResult("failed", json.dumps({"error": error.message, "error_code": error.error_code}, ensure_ascii=False), error.message, error.error_code)
         except Exception:
-            return ToolExecutionResult(
-                "failed",
-                '{"error":"tool execution failed","error_code":"TOOL_EXECUTION_FAILED"}',
-                "Tool execution failed",
-                "TOOL_EXECUTION_FAILED",
-            )
+            return ToolExecutionResult("failed", '{"error":"tool execution failed","error_code":"TOOL_EXECUTION_FAILED"}', "Tool execution failed", "TOOL_EXECUTION_FAILED")
         content = json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
         return ToolExecutionResult("succeeded", content, tool.summary(arguments))
 
@@ -91,12 +82,7 @@ class ToolRegistry:
 
 
 def object_schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": properties,
-        "required": required or [],
-    }
+    return {"type": "object", "additionalProperties": False, "properties": properties, "required": required or []}
 
 
 def create_default_registry(
@@ -110,22 +96,55 @@ def create_default_registry(
     desktop_adapter = desktop or WindowsDesktopAdapter(file_adapter.root)
     registry = ToolRegistry()
 
-    def add(name: str, description: str, risk: str, parameters: dict[str, Any], executor: Executor, summary: Callable[[dict[str, Any]], str]) -> None:
-        registry.register(RegisteredTool(ToolDescriptor(name, description, risk, parameters, timeout_seconds), executor, summary))  # type: ignore[arg-type]
+    def add(name: str, description: str, risk: str, parameters: dict[str, Any], executor: Executor, summary: Callable[[dict[str, Any]], str], details: Details = lambda _args: None) -> None:
+        registry.register(RegisteredTool(ToolDescriptor(name, description, risk, parameters, timeout_seconds), executor, summary, details))  # type: ignore[arg-type]
 
     empty = object_schema({})
+    text = {"type": "string", "maxLength": 65536}
     add("system.current_time", "Get the current local time with timezone.", "L0", empty, lambda _: desktop_adapter.current_time(), lambda _: "Read current time")
     add("system.info", "Get basic operating system, architecture, and Python version.", "L0", empty, lambda _: desktop_adapter.system_info(), lambda _: "Read basic system information")
     add("desktop.open_url", "Open an HTTP or HTTPS URL in the default browser.", "L1", object_schema({"url": {"type": "string", "minLength": 1, "maxLength": 2048}}, ["url"]), lambda args: desktop_adapter.open_url(args["url"]), lambda args: f"Open URL host: {url_host(args['url'])}")
     add("desktop.open_app", "Open an allowlisted Windows application.", "L1", object_schema({"application": {"type": "string", "enum": ["notepad", "calculator", "explorer"]}}, ["application"]), lambda args: desktop_adapter.open_app(args["application"]), lambda args: f"Open application: {args['application']}")
     add("clipboard.read_text", "Read plain text from the Windows clipboard.", "L1", empty, lambda _: desktop_adapter.read_clipboard(), lambda _: "Read clipboard text")
-    add("clipboard.write_text", "Replace Windows clipboard text.", "L1", object_schema({"text": {"type": "string", "maxLength": 10000}}, ["text"]), lambda args: desktop_adapter.write_clipboard(args["text"]), lambda _: "Write clipboard text")
-    add("files.search_names", "Search approved text file names inside the shared directory.", "L1", object_schema({"query": {"type": "string", "minLength": 1, "maxLength": 100}, "max_results": {"type": "integer", "minimum": 1, "maximum": 50}}, ["query"]), lambda args: file_adapter.search_names(args["query"], args.get("max_results", 20)), lambda _: "Search file names in shared directory")
-    add("files.read_text", "Read one approved UTF-8 text file from the shared directory. User confirmation is required.", "L2", object_schema({"relative_path": {"type": "string", "minLength": 1, "maxLength": 260}}, ["relative_path"]), lambda args: file_adapter.read_text(args["relative_path"]), lambda args: f"Read shared file: {Path(args['relative_path']).as_posix()}")
+    add(
+        "clipboard.write_text", "Replace Windows clipboard text after user confirmation.", "L2",
+        object_schema({"text": {"type": "string", "maxLength": 10000}}, ["text"]),
+        lambda args: desktop_adapter.write_clipboard(args["text"]), lambda _: "Write clipboard text",
+        lambda args: {"target": "Clipboard", "operation": "clipboard", "content": args["text"], "content_length": len(args["text"]), "will_create_backup": False},
+    )
+    add(
+        "files.search_names", "Resolve an exact absolute file path or search common document and media filenames on non-sensitive fixed local drives. User confirmation is required.", "L2",
+        object_schema({"query": {"type": "string", "minLength": 1, "maxLength": 1024}, "max_results": {"type": "integer", "minimum": 1, "maximum": 50}}, ["query"]),
+        lambda args: file_adapter.search_names(args["query"], args.get("max_results", 20)),
+        lambda args: file_adapter.search_summary(args["query"]),
+        lambda args: file_adapter.search_details(args["query"]),
+    )
+    add(
+        "files.read_file", "Read a searched file by file_id. Text and documents are extracted; media returns metadata. User confirmation is required.", "L2",
+        object_schema({"file_id": {"type": "string", "minLength": 1, "maxLength": 64}}, ["file_id"]),
+        lambda args: file_adapter.read_file(args["file_id"]), lambda args: f"Read searched file: {file_adapter.reference_details(args['file_id'])['target']}",
+        lambda args: file_adapter.reference_details(args["file_id"]),
+    )
+    add(
+        "files.create_text", "Create a new UTF-8 text file at an approved absolute path. User confirmation is required.", "L2",
+        object_schema({"path": {"type": "string", "minLength": 3, "maxLength": 1024}, "content": text}, ["path", "content"]),
+        lambda args: file_adapter.create_text(args["path"], args["content"]), lambda args: f"Create text file: {file_adapter.create_details(args['path'], args['content'])['target']}",
+        lambda args: file_adapter.create_details(args["path"], args["content"]),
+    )
+    add(
+        "files.replace_text", "Replace a searched UTF-8 text file by file_id and create a backup. User confirmation is required.", "L2",
+        object_schema({"file_id": {"type": "string", "minLength": 1, "maxLength": 64}, "content": text}, ["file_id", "content"]),
+        lambda args: file_adapter.replace_text(args["file_id"], args["content"]), lambda args: f"Replace searched text file with backup: {file_adapter.replace_details(args['file_id'], args['content'])['target']}",
+        lambda args: file_adapter.replace_details(args["file_id"], args["content"]),
+    )
+    add(
+        "files.read_text", "Read one approved UTF-8 text file from the legacy shared directory. User confirmation is required.", "L2",
+        object_schema({"relative_path": {"type": "string", "minLength": 1, "maxLength": 260}}, ["relative_path"]),
+        lambda args: file_adapter.read_text(args["relative_path"]), lambda args: f"Read shared file: {Path(args['relative_path']).as_posix()}",
+    )
     return registry
 
 
 def url_host(url: str) -> str:
     from urllib.parse import urlsplit
-
     return urlsplit(url).hostname or "invalid"
