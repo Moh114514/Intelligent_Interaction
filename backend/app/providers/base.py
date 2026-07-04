@@ -2,12 +2,26 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
-from typing import TypedDict
+from dataclasses import dataclass
+from typing import Any, TypedDict
+
+from backend.app.tools.models import ToolCall
 
 
-class ChatMessage(TypedDict):
+class ChatMessage(TypedDict, total=False):
     role: str
-    content: str
+    content: str | None
+    tool_calls: list[dict[str, Any]]
+    tool_call_id: str
+
+
+@dataclass(frozen=True)
+class ToolCallBatch:
+    calls: list[ToolCall]
+    assistant_message: ChatMessage
+
+
+ProviderTurnEvent = str | ToolCallBatch
 
 
 class ProviderError(Exception):
@@ -20,6 +34,7 @@ class ProviderError(Exception):
 
 
 class LLMProvider(ABC):
+    supports_tool_calls = False
     @abstractmethod
     async def stream_chat(
         self,
@@ -27,6 +42,15 @@ class LLMProvider(ABC):
         messages: Sequence[ChatMessage],
         system_prompt: str,
     ) -> AsyncIterator[str]:
-        """Yield text deltas for one assistant response."""
         if False:
-            yield ""
+            yield ""
+
+    async def stream_turn(
+        self,
+        *,
+        messages: Sequence[ChatMessage],
+        system_prompt: str,
+        tools: Sequence[dict[str, Any]],
+    ) -> AsyncIterator[ProviderTurnEvent]:
+        async for delta in self.stream_chat(messages=messages, system_prompt=system_prompt):
+            yield delta

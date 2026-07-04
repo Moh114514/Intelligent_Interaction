@@ -137,6 +137,7 @@ class SidecarManager extends EventEmitter {
     const env = {
       ...process.env,
       PYTHONUNBUFFERED: '1',
+      PYTHONDONTWRITEBYTECODE: '1',
       AGENT_HOST: '127.0.0.1',
       AGENT_PORT: String(port),
       AGENT_AUTH_TOKEN: token,

@@ -29,15 +29,28 @@ Python Agent configuration:
 - `LLM_MODEL` (default `deepseek-chat`)
 - `LLM_TIMEOUT_SECONDS` (default `30`)
 - `LLM_MAX_HISTORY_MESSAGES` (default `20`)
+- `AGENT_MAX_TOOL_STEPS` (default `5`)
+- `TOOL_TIMEOUT_SECONDS` (default `10`)
+- `TOOL_CONFIRMATION_TIMEOUT_SECONDS` (default `30`)
+- `TOOL_SHARED_ROOT` (legacy shared-directory default: `%USERPROFILE%\Documents\Garfield Chat Shared`)
 
 Development reads `backend/.env.local`. Packaged builds read `%APPDATA%\Garfield Chat\backend.env`.
 
 Speech credentials remain in ignored `api.config.ts` until their phase 7 migration.
+
+## Local tools
+
+The Python Agent exposes only allowlisted tools. Time and basic system information are L0. Approved URL/application opening and clipboard reads are L1. Fixed-drive filename search, file reads, text-file creation/replacement and clipboard writes are L2 and always require one-time confirmation.
+
+Search resolves exact absolute paths immediately or uses prioritized breadth-first filename discovery across non-sensitive local fixed drives. It returns short-lived file IDs and skips system, application-data, credential, hidden and reparse-point locations. Reads accept only those IDs: UTF-8 text and supported PDF/Office documents yield bounded text, while media yields metadata only.
+
+Text creation accepts an approved absolute path; replacement requires a searched file ID, verifies that the file has not changed, creates a timestamped backup and then atomically replaces it. The Agent cannot delete, move, rename, execute or write binary files. Audit logs contain statuses and redacted targets, never file or clipboard content.
 
 ## Verification
 
 - `npm run verify:m1`: M1 regression suite
 - `npm run test:renderer`: AgentClient and streaming UI tests
 - `npm run verify:m2`: complete M2 suite
+- `npm run verify:m3`: complete M3 tool and M2 regression suite
 - `npm run electron:build`: Windows installer build
 - `npm run smoke:electron`: packaged startup and sidecar cleanup test
