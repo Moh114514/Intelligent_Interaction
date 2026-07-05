@@ -5,14 +5,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { AvatarMode, AvatarStage, loadAvatarMode, saveAvatarMode } from './features/avatar';
 import { DiagnosticsPanel } from './features/diagnostics';
 import { ConversationPanel, appendMessage, createMessageHistory, MessageHistory, removeMessage, upsertModelMessage } from './features/conversation';
-import { decodeAudioData, decodeBase64, useAudioPlayback } from './features/speech';
+import { PcmRecorder, useAudioPlayback } from './features/speech';
 import { BLACK_CAT_CONFIG, SOLDIER_CONFIG, WHITE_CAT_CONFIG } from './constants';
 import { CatConfig, CatType } from './types';
 import { AgentClient, AgentClientError } from './services/agentClient';
 import { ToolConfirmationModal } from './components/ToolConfirmationModal';
 import { AgentState, ToolConfirmationRequiredData } from './generated/contracts';
-import { createCustomSpeechService } from './config';
-import { synthesizeSpeech } from './services/xunfeiTts';
+import { SpeechClient, SpeechClientError } from './services/speechClient';
 
 function App() {
   const [currentCat, setCurrentCat] = useState<CatConfig>(BLACK_CAT_CONFIG);
@@ -24,6 +23,7 @@ function App() {
   const [isListening, setIsListening] = useState(false);
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechLevel, setSpeechLevel] = useState(0);
   const [isLoadingText, setIsLoadingText] = useState(false);
   const [volume, setVolume] = useState(0.7);
   const [isSinging, setIsSinging] = useState(false);
@@ -49,7 +49,9 @@ function App() {
     [CatType.WHITE]: uuidv4(),
     [CatType.SOLDIER]: uuidv4()
   });
-  const speechServiceRef = useRef(createCustomSpeechService());
+  const speechClientRef = useRef(new SpeechClient());
+  const recorderRef = useRef(new PcmRecorder());
+  const recordingRef = useRef(false);
   const greetingInProgressRef = useRef(new Set<CatType>());
 
   const handlePlaybackStart = useCallback(() => {
@@ -65,27 +67,36 @@ function App() {
   const { audioContextRef, playAudioBuffer, resetPlayback, resetQueue } = useAudioPlayback({
     volume,
     onPlaybackStart: handlePlaybackStart,
-    onPlaybackIdle: handlePlaybackIdle
+    onPlaybackIdle: handlePlaybackIdle,
+    onLevel: setSpeechLevel
   });
 
-  useEffect(() => () => agentClientRef.current.disconnect(), []);
+  useEffect(() => () => {
+    agentClientRef.current.disconnect();
+    speechClientRef.current.cancelAll();
+    recordingRef.current = false;
+    void recorderRef.current.cancel();
+  }, []);
   useEffect(() => saveAvatarMode(avatarMode), [avatarMode]);
 
   const speak = useCallback(async (text: string, cat: CatConfig) => {
+    setIsProcessingVoice(true);
     try {
-      const result = await synthesizeSpeech(text, cat);
-      if (!result || !audioContextRef.current) return;
-      const buffer = await decodeAudioData(
-        decodeBase64(result.audioData),
-        audioContextRef.current,
-        result.sampleRate
-      );
+      const audio = await speechClientRef.current.synthesize(text, cat.type, uuidv4());
+      const context = audioContextRef.current;
+      if (!context) {
+        setIsProcessingVoice(false);
+        return;
+      }
+      const buffer = await context.decodeAudioData(audio.slice(0));
       playAudioBuffer(buffer);
     } catch (error) {
-      console.warn('Speech synthesis failed; keeping the text response.', error);
+      if (!(error instanceof SpeechClientError) || error.errorCode !== 'SPEECH_CANCELLED') {
+        console.warn('语音合成失败，文字回复仍可使用。', error);
+      }
+      setIsProcessingVoice(false);
     }
   }, [audioContextRef, playAudioBuffer]);
-
   const generate = useCallback(async (prompt: string, cat: CatConfig, speakResult = true) => {
     const sessionId = sessionIdsRef.current[cat.type];
     let streamed = '';
@@ -217,36 +228,49 @@ function App() {
   const handleMultipleClicks = async () => {
     setShowAngryCat(true);
     await resetPlayback();
-    const result = await synthesizeSpeech('干嘛——', activeCharacter).catch(() => null);
-    if (result && audioContextRef.current) {
-      const buffer = await decodeAudioData(decodeBase64(result.audioData), audioContextRef.current, result.sampleRate);
-      playAudioBuffer(buffer);
-    }
+    await speak('干嘛——', activeCharacter);
     window.setTimeout(() => setShowAngryCat(false), 2000);
   };
 
-  const stopListening = useCallback(() => {
+  const stopListening = useCallback(async () => {
+    if (!recordingRef.current) return;
+    recordingRef.current = false;
     setIsListening(false);
+    setIsProcessingVoice(true);
     setAgentState('recognizing');
-    window.setTimeout(() => setAgentState((current) => current === 'recognizing' ? 'idle' : current), 500);
-    speechServiceRef.current.stop();
-  }, []);
-
-  const startListening = () => {
-    setIsListening(true);
-    setAgentState('listening');
-    speechServiceRef.current.start(
-      (text, isFinal) => {
-        setInputText(text);
-        if (isFinal) stopListening();
-      },
-      (error) => {
-        console.error('Speech recognition failed:', error);
-        stopListening();
+    try {
+      const wav = await recorderRef.current.stop();
+      const result = await speechClientRef.current.transcribe(wav, uuidv4());
+      setInputText(result.text);
+      setAgentState('idle');
+    } catch (error) {
+      if (!(error instanceof SpeechClientError) || error.errorCode !== 'SPEECH_CANCELLED') {
+        const message = error instanceof Error ? error.message : '语音识别失败';
+        setMessages((previous) => appendMessage(previous, activeCharacter.type, 'model', `语音识别失败：${message}`));
+        setAgentState('error');
+        window.setTimeout(() => setAgentState((current) => current === 'error' ? 'idle' : current), 1500);
       }
-    );
-  };
+    } finally {
+      setIsProcessingVoice(false);
+    }
+  }, [activeCharacter.type]);
 
+  const startListening = async () => {
+    if (recordingRef.current || isProcessingVoice) return;
+    recordingRef.current = true;
+    try {
+      await recorderRef.current.start();
+      if (!recordingRef.current) return;
+      setIsListening(true);
+      setAgentState('listening');
+    } catch (error) {
+      recordingRef.current = false;
+      const message = error instanceof Error ? error.message : '无法访问麦克风';
+      setMessages((previous) => appendMessage(previous, activeCharacter.type, 'model', `麦克风不可用：${message}`));
+      setAgentState('error');
+      window.setTimeout(() => setAgentState((current) => current === 'error' ? 'idle' : current), 1500);
+    }
+  };
   const handleToolDecision = useCallback((approved: boolean) => {
     const pending = pendingToolConfirmation;
     if (!pending) return;
@@ -262,7 +286,9 @@ function App() {
   const handleInterrupt = async () => {
     const active = activeRequestRef.current;
     if (active) agentClientRef.current.cancel(active.sessionId, active.requestId);
-    speechServiceRef.current.stop();
+    speechClientRef.current.cancelAll();
+    recordingRef.current = false;
+    await recorderRef.current.cancel();
     setIsListening(false);
     setIsProcessingVoice(false);
     setIsLoadingText(false);
@@ -323,6 +349,7 @@ function App() {
           <AvatarStage
             mode={avatarMode}
             state={agentState}
+            speechLevel={speechLevel}
             config={currentCat}
             showAngryCat={showAngryCat}
             onMultipleClicks={handleMultipleClicks}

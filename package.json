@@ -23,6 +23,8 @@
     "electron:build": "npm run build && npm run clean:release && electron-builder && npm run security:scan-package",
     "test:renderer": "vitest run tests/renderer",
     "verify:m4": "npm run verify:m3 && npm run test:avatar",
+    "test:speech": "python -m pytest backend/tests/test_speech.py backend/tests/test_audio_api.py -q",
+    "verify:m5": "npm run verify:m4 && npm run test:speech",
     "verify:m2": "npm run verify:m1 && npm run test:renderer",
     "verify:m3": "npm run verify:m2",
     "clean:dist": "node scripts/clean-artifacts.mjs dist",
@@ -67,8 +69,6 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
-    "@types/crypto-js": "^4.2.2",
-    "crypto-js": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "three": "^0.180.0",

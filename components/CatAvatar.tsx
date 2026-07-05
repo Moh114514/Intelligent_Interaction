@@ -4,6 +4,7 @@ import { CatConfig, CatType } from '../types';
 interface CatAvatarProps {
     config: CatConfig;
     isSpeaking: boolean;
+    speechLevel?: number;
     isListening: boolean;
     isThinking: boolean;
     onCatClick?: () => void;
@@ -11,7 +12,7 @@ interface CatAvatarProps {
     showAngryCat?: boolean; // 显示愤怒猫咪图片
 }
 
-export const CatAvatar: React.FC<CatAvatarProps> = ({ config, isSpeaking, isListening, isThinking, onCatClick, onMultipleClicks, showAngryCat }) => {
+export const CatAvatar: React.FC<CatAvatarProps> = ({ config, isSpeaking, speechLevel = 0, isListening, isThinking, onCatClick, onMultipleClicks, showAngryCat }) => {
     const [lookDirection, setLookDirection] = useState({ x: 0, y: 0 });
     const [isBlinking, setIsBlinking] = useState(false);
     const [isSleeping, setIsSleeping] = useState(false);
@@ -341,7 +342,7 @@ export const CatAvatar: React.FC<CatAvatarProps> = ({ config, isSpeaking, isList
 
                     {/* Mouth */}
                     {isSpeaking ? (
-                        <div className="absolute top-[8.5rem] left-1/2 -translate-x-1/2 w-8 h-10 bg-red-900 rounded-[50%] border-2 border-black overflow-hidden z-10 animate-talk">
+                        <div className="absolute top-[8.5rem] left-1/2 -translate-x-1/2 w-8 h-10 bg-red-900 rounded-[50%] border-2 border-black overflow-hidden z-10" style={{ height: `${16 + speechLevel * 28}px` }}>
                             <div className="absolute bottom-[-5px] left-1/2 -translate-x-1/2 w-6 h-6 bg-pink-400 rounded-full"></div>
                         </div>
                     ) : (

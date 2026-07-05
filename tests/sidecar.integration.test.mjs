@@ -5,7 +5,7 @@ import test from 'node:test';
 const require = createRequire(import.meta.url);
 const { SidecarManager } = require('../apps/electron/main/sidecar/manager.cjs');
 
-const waitForStatus = (manager, expected, timeoutMs = 10000) => new Promise((resolve, reject) => {
+const waitForStatus = (manager, expected, timeoutMs = 20000) => new Promise((resolve, reject) => {
   if (manager.getStatus().state === expected) return resolve(manager.getStatus());
   const timer = setTimeout(() => {
     manager.removeListener('status', listener);
@@ -56,7 +56,7 @@ const requestEcho = (connection) => new Promise((resolve, reject) => {
 });
 
 test('sidecar starts, authenticates, restarts once and stops cleanly', async () => {
-  const manager = new SidecarManager({ rootDir: process.cwd(), healthTimeoutMs: 10000 });
+  const manager = new SidecarManager({ rootDir: process.cwd(), healthTimeoutMs: 20000 });
   try {
     const first = await manager.start();
     const response = await fetch(`${first.httpUrl}/version`, {

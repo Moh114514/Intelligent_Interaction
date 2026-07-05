@@ -7,7 +7,7 @@ const readJson = async (path) => JSON.parse(await readFile(resolve(root, path), 
 export const normalizeText = (value) => value.replace(/\r\n/g, '\n');
 
 export async function renderContracts() {
-  const [states, events, tools] = await Promise.all([
+  const [states, events, tools, audio] = await Promise.all([
     readJson('contracts/agent-states.json'),
     readJson('contracts/events.schema.json'),
     readJson('contracts/tools.schema.json')
@@ -31,7 +31,7 @@ export async function renderContracts() {
 export interface ToolConfirmationRequiredData { confirmation_id: string; tool_call_id: string; tool_name: string; risk_level: 'L2'; summary: string; expires_at: string; details?: ToolConfirmationDetails | null; }\n` +
 `export interface ToolConfirmationResponseData { confirmation_id: string; approved: boolean; }\n` +
 `export type ToolResultStatus = 'succeeded' | 'denied' | 'failed' | 'timed_out' | 'cancelled';\n` +
-`export interface ToolResultData { tool_call_id: string; tool_name: string; status: ToolResultStatus; summary: string; }\n\n` +
+`export interface ToolResultData { tool_call_id: string; tool_name: string; status: ToolResultStatus; summary: string; }\n\n` +`export interface AsrResponse { text: string; language: string; duration_ms: number; sample_rate: 16000; channels: 1; }\n` +`export interface TtsRequest { text: string; character_id: CharacterId; }\n` +`export interface TtsResponse { audio_id: string; mime_type: 'audio/wav'; sample_rate: number; channels: number; expires_at: string; }\n\n` +
 `export interface AgentEvent<TData extends Record<string, unknown> = Record<string, unknown>> {\n` +
 `  type: AgentEventType;\n  version: '1.0';\n  session_id: string;\n  request_id: string;\n  timestamp: string;\n  data: TData;\n}\n\n` +
 `export interface AgentError {\n  error_code: string;\n  message: string;\n  recoverable: boolean;\n  request_id: string;\n  details?: Record<string, unknown>;\n}\n`;
@@ -49,7 +49,7 @@ export interface ToolConfirmationRequiredData { confirmation_id: string; tool_ca
 `class AssistantMessageData(BaseModel):\n    content: str = Field(min_length=1)\n\n` +
 `class ToolConfirmationRequiredData(BaseModel):\n    confirmation_id: str\n    tool_call_id: str\n    tool_name: str\n    risk_level: str = Field(pattern=r"^L2$")\n    summary: str\n    expires_at: str\n    details: dict[str, Any] | None = None\n\n` +
 `class ToolConfirmationResponseData(BaseModel):\n    confirmation_id: str\n    approved: bool\n\n` +
-`class ToolResultData(BaseModel):\n    tool_call_id: str\n    tool_name: str\n    status: str = Field(pattern=r"^(succeeded|denied|failed|timed_out|cancelled)$")\n    summary: str\n\n` +
+`class ToolResultData(BaseModel):\n    tool_call_id: str\n    tool_name: str\n    status: str = Field(pattern=r"^(succeeded|denied|failed|timed_out|cancelled)$")\n    summary: str\n\n` +`class AsrResponse(BaseModel):\n    text: str\n    language: str\n    duration_ms: int\n    sample_rate: int\n    channels: int\n\n` +`class TtsRequest(BaseModel):\n    text: str = Field(min_length=1, max_length=2000)\n    character_id: CharacterId\n\n` +`class TtsResponse(BaseModel):\n    audio_id: str\n    mime_type: str\n    sample_rate: int\n    channels: int\n    expires_at: str\n\n` +
 `class AgentEvent(BaseModel):\n    type: AgentEventType\n    version: str = Field(pattern=r"^1\\.0$")\n    session_id: str\n    request_id: str\n    timestamp: str\n    data: dict[str, Any]\n\n` +
 `class AgentError(BaseModel):\n    error_code: str\n    message: str\n    recoverable: bool\n    request_id: str\n    details: dict[str, Any] | None = None\n`;
 

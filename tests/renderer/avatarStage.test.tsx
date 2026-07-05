@@ -6,7 +6,7 @@ import { BLACK_CAT_CONFIG } from '../../constants';
 
 describe('AvatarStage', () => {
   it('renders CSS and Three.js as explicit peer modes with state feedback', () => {
-    const shared = { config: BLACK_CAT_CONFIG, showAngryCat: false, onMultipleClicks: vi.fn(), onModeChange: vi.fn() };
+    const shared = { speechLevel: 0.5, config: BLACK_CAT_CONFIG, showAngryCat: false, onMultipleClicks: vi.fn(), onModeChange: vi.fn() };
     const css = renderToStaticMarkup(<AvatarStage {...shared} mode="css" state="thinking" />);
     expect(css).toContain('data-avatar-mode="css"');
     expect(css).toContain('思考');

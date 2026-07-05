@@ -17,6 +17,10 @@ export interface ToolConfirmationResponseData { confirmation_id: string; approve
 export type ToolResultStatus = 'succeeded' | 'denied' | 'failed' | 'timed_out' | 'cancelled';
 export interface ToolResultData { tool_call_id: string; tool_name: string; status: ToolResultStatus; summary: string; }
 
+export interface AsrResponse { text: string; language: string; duration_ms: number; sample_rate: 16000; channels: 1; }
+export interface TtsRequest { text: string; character_id: CharacterId; }
+export interface TtsResponse { audio_id: string; mime_type: 'audio/wav'; sample_rate: number; channels: number; expires_at: string; }
+
 export interface AgentEvent<TData extends Record<string, unknown> = Record<string, unknown>> {
   type: AgentEventType;
   version: '1.0';

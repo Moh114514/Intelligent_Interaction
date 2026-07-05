@@ -21,6 +21,7 @@ type LoadState = 'loading' | 'ready' | 'error';
 interface AvatarStageProps {
   mode: AvatarMode;
   state: AgentState;
+  speechLevel: number;
   config: CatConfig;
   showAngryCat: boolean;
   onMultipleClicks: () => void;
@@ -28,7 +29,7 @@ interface AvatarStageProps {
 }
 
 export const AvatarStage: React.FC<AvatarStageProps> = ({
-  mode, state, config, showAngryCat, onMultipleClicks, onModeChange
+  mode, state, speechLevel, config, showAngryCat, onMultipleClicks, onModeChange
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<ThreeAvatarScene | null>(null);
@@ -60,6 +61,7 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({
   }, [mode, attempt]);
 
   useEffect(() => sceneRef.current?.setState(state), [state]);
+  useEffect(() => sceneRef.current?.setSpeechLevel(speechLevel), [speechLevel]);
 
   const presentation = STATE_PRESENTATION[state];
   if (mode === 'css') {
@@ -68,6 +70,7 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({
         <CatAvatar
           config={config}
           isSpeaking={state === 'speaking'}
+          speechLevel={speechLevel}
           isListening={state === 'listening'}
           isThinking={['recognizing', 'thinking', 'confirming', 'acting'].includes(state)}
           onCatClick={() => undefined}

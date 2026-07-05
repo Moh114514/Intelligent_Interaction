@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intelligent-interaction.local/contracts/audio.schema.json",
+  "title": "Audio API contracts",
+  "type": "object",
+  "$defs": {
+    "characterId": { "type": "string", "enum": ["BLACK", "WHITE", "SOLDIER"] },
+    "asrResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["text", "language", "duration_ms", "sample_rate", "channels"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 }, "language": { "type": "string" },
+        "duration_ms": { "type": "integer", "minimum": 0 }, "sample_rate": { "const": 16000 }, "channels": { "const": 1 }
+      }
+    },
+    "ttsRequest": {
+      "type": "object", "additionalProperties": false, "required": ["text", "character_id"],
+      "properties": { "text": { "type": "string", "minLength": 1, "maxLength": 2000 }, "character_id": { "$ref": "#/$defs/characterId" } }
+    },
+    "ttsResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["audio_id", "mime_type", "sample_rate", "channels", "expires_at"],
+      "properties": {
+        "audio_id": { "type": "string", "format": "uuid" }, "mime_type": { "const": "audio/wav" },
+        "sample_rate": { "type": "integer", "minimum": 8000 }, "channels": { "type": "integer", "minimum": 1 },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
