@@ -9,6 +9,7 @@ def test_prompt_layers_execution_tools_and_persona() -> None:
     tools = [tool("system_current_time"), tool("files_search_names"), tool("files_replace_text")]
     black = compose_system_prompt("BLACK", tools)
     white = compose_system_prompt("WHITE", tools)
+    soldier = compose_system_prompt("SOLDIER", tools)
 
     assert "# Agent Execution Contract" in black
     assert "untrusted data" in black
@@ -17,6 +18,8 @@ def test_prompt_layers_execution_tools_and_persona() -> None:
     assert "exact target and complete content" in black
     assert "Kuro" in black and "Shiro" not in black
     assert "Shiro" in white and black != white
+    assert "Vanguard" in soldier and "cat mannerisms" in soldier
+    assert "Kuro" not in soldier and "Shiro" not in soldier
     assert "files_create_text" not in black
 
 

@@ -2,20 +2,23 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { UserIcon, SparklesIcon, SpeakerWaveIcon, SpeakerXMarkIcon, MusicalNoteIcon } from '@heroicons/react/24/solid';
 import { v4 as uuidv4 } from 'uuid';
 
-import { CatAvatar } from './features/avatar';
+import { AvatarMode, AvatarStage, loadAvatarMode, saveAvatarMode } from './features/avatar';
 import { DiagnosticsPanel } from './features/diagnostics';
 import { ConversationPanel, appendMessage, createMessageHistory, MessageHistory, removeMessage, upsertModelMessage } from './features/conversation';
 import { decodeAudioData, decodeBase64, useAudioPlayback } from './features/speech';
-import { BLACK_CAT_CONFIG, WHITE_CAT_CONFIG } from './constants';
+import { BLACK_CAT_CONFIG, SOLDIER_CONFIG, WHITE_CAT_CONFIG } from './constants';
 import { CatConfig, CatType } from './types';
 import { AgentClient, AgentClientError } from './services/agentClient';
 import { ToolConfirmationModal } from './components/ToolConfirmationModal';
-import { ToolConfirmationRequiredData } from './generated/contracts';
+import { AgentState, ToolConfirmationRequiredData } from './generated/contracts';
 import { createCustomSpeechService } from './config';
 import { synthesizeSpeech } from './services/xunfeiTts';
 
 function App() {
   const [currentCat, setCurrentCat] = useState<CatConfig>(BLACK_CAT_CONFIG);
+  const [avatarMode, setAvatarMode] = useState<AvatarMode>(loadAvatarMode);
+  const activeCharacter = avatarMode === 'three' ? SOLDIER_CONFIG : currentCat;
+  const [agentState, setAgentState] = useState<AgentState>('idle');
   const [messages, setMessages] = useState<MessageHistory>(createMessageHistory);
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -35,14 +38,16 @@ function App() {
   const [isStarted, setIsStarted] = useState(false);
   const [hasGreeted, setHasGreeted] = useState<Record<CatType, boolean>>({
     [CatType.BLACK]: false,
-    [CatType.WHITE]: false
+    [CatType.WHITE]: false,
+    [CatType.SOLDIER]: false
   });
 
   const agentClientRef = useRef(new AgentClient());
   const activeRequestRef = useRef<{ requestId: string; sessionId: string } | null>(null);
   const sessionIdsRef = useRef<Record<CatType, string>>({
     [CatType.BLACK]: uuidv4(),
-    [CatType.WHITE]: uuidv4()
+    [CatType.WHITE]: uuidv4(),
+    [CatType.SOLDIER]: uuidv4()
   });
   const speechServiceRef = useRef(createCustomSpeechService());
   const greetingInProgressRef = useRef(new Set<CatType>());
@@ -50,10 +55,12 @@ function App() {
   const handlePlaybackStart = useCallback(() => {
     setIsProcessingVoice(false);
     setIsSpeaking(true);
+    setAgentState('speaking');
   }, []);
   const handlePlaybackIdle = useCallback(() => {
     setIsSpeaking(false);
     setIsSinging(false);
+    setAgentState('idle');
   }, []);
   const { audioContextRef, playAudioBuffer, resetPlayback, resetQueue } = useAudioPlayback({
     volume,
@@ -62,6 +69,7 @@ function App() {
   });
 
   useEffect(() => () => agentClientRef.current.disconnect(), []);
+  useEffect(() => saveAvatarMode(avatarMode), [avatarMode]);
 
   const speak = useCallback(async (text: string, cat: CatConfig) => {
     try {
@@ -82,6 +90,7 @@ function App() {
     const sessionId = sessionIdsRef.current[cat.type];
     let streamed = '';
     const request = agentClientRef.current.sendMessage(sessionId, cat.type, prompt, {
+      onState: setAgentState,
       onDelta: (delta) => {
         streamed += delta;
         setMessages((previous) => upsertModelMessage(previous, cat.type, request.requestId, streamed));
@@ -104,8 +113,10 @@ function App() {
     } catch (error) {
       setMessages((previous) => removeMessage(previous, cat.type, request.requestId));
       if (!(error instanceof AgentClientError) || error.errorCode !== 'REQUEST_CANCELLED') {
+        setAgentState('error');
+        window.setTimeout(() => setAgentState((current) => current === 'error' ? 'idle' : current), 1500);
         const message = error instanceof Error ? error.message : 'The agent request failed';
-        setMessages((previous) => appendMessage(previous, cat.type, 'model', `Meow? ${message}`));
+        setMessages((previous) => appendMessage(previous, cat.type, 'model', `${cat.type === CatType.SOLDIER ? 'Report:' : 'Meow?'} ${message}`));
       }
       throw error;
     } finally {
@@ -122,14 +133,15 @@ function App() {
   };
 
   useEffect(() => {
-    const catType = currentCat.type;
+    const catType = activeCharacter.type;
     if (!isStarted || hasGreeted[catType] || greetingInProgressRef.current.has(catType)) return;
     const timer = window.setTimeout(() => {
       greetingInProgressRef.current.add(catType);
       setHasGreeted((previous) => ({ ...previous, [catType]: true }));
       setIsLoadingText(true);
       setIsProcessingVoice(true);
-      void generate('这是你第一次见到主人，请用符合你性格的方式简短打招呼并介绍自己。', currentCat)
+      setAgentState('thinking');
+      void generate('这是你第一次见到主人，请用符合你性格的方式简短打招呼并介绍自己。', activeCharacter)
         .catch(() => undefined)
         .finally(() => {
           greetingInProgressRef.current.delete(catType);
@@ -138,7 +150,7 @@ function App() {
         });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [currentCat, generate, hasGreeted, isStarted]);
+  }, [activeCharacter, generate, hasGreeted, isStarted]);
 
   const handleToggleCat = () => {
     setCurrentCat((previous) => previous.type === CatType.BLACK ? WHITE_CAT_CONFIG : BLACK_CAT_CONFIG);
@@ -151,11 +163,12 @@ function App() {
   const handleTextSubmit = async () => {
     const text = inputText.trim();
     if (!text || isLoadingText) return;
-    const cat = currentCat;
+    const cat = activeCharacter;
     setInputText('');
     setMessages((previous) => appendMessage(previous, cat.type, 'user', text));
     setIsLoadingText(true);
     setIsProcessingVoice(true);
+    setAgentState('thinking');
     try {
       await generate(text, cat);
     } catch {
@@ -168,9 +181,10 @@ function App() {
 
   const handleSing = async () => {
     if (isSinging || isSpeaking || isLoadingText) return;
-    const cat = currentCat;
+    const cat = activeCharacter;
     setIsSinging(true);
     setIsLoadingText(true);
+    setAgentState('thinking');
     setIsProcessingVoice(true);
     try {
       await generate('请唱一小段原创、轻松可爱的短歌，不要引用现有歌曲歌词。', cat);
@@ -184,8 +198,9 @@ function App() {
 
   const handleFeed = async () => {
     if (isSpeaking || isLoadingText) return;
-    const cat = currentCat;
+    const cat = activeCharacter;
     setShowFishAnimation(true);
+    setAgentState('thinking');
     window.setTimeout(() => setShowFishAnimation(false), 2000);
     setIsLoadingText(true);
     setIsProcessingVoice(true);
@@ -202,7 +217,7 @@ function App() {
   const handleMultipleClicks = async () => {
     setShowAngryCat(true);
     await resetPlayback();
-    const result = await synthesizeSpeech('干嘛——', currentCat).catch(() => null);
+    const result = await synthesizeSpeech('干嘛——', activeCharacter).catch(() => null);
     if (result && audioContextRef.current) {
       const buffer = await decodeAudioData(decodeBase64(result.audioData), audioContextRef.current, result.sampleRate);
       playAudioBuffer(buffer);
@@ -212,11 +227,14 @@ function App() {
 
   const stopListening = useCallback(() => {
     setIsListening(false);
+    setAgentState('recognizing');
+    window.setTimeout(() => setAgentState((current) => current === 'recognizing' ? 'idle' : current), 500);
     speechServiceRef.current.stop();
   }, []);
 
   const startListening = () => {
     setIsListening(true);
+    setAgentState('listening');
     speechServiceRef.current.start(
       (text, isFinal) => {
         setInputText(text);
@@ -250,6 +268,7 @@ function App() {
     setIsLoadingText(false);
     setIsSpeaking(false);
     setPendingToolConfirmation(null);
+    setAgentState('idle');
     await resetPlayback();
   };
 
@@ -262,8 +281,8 @@ function App() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] backdrop-blur-sm">
           <div className="bg-white p-8 rounded-3xl shadow-2xl border-4 border-orange-200 text-center max-w-md">
             <div className="text-6xl mb-6 animate-bounce">🐈</div>
-            <h2 className="text-3xl font-bold text-orange-600 mb-4">欢迎来到 Garfield Chat</h2>
-            <p className="text-gray-600 mb-6 text-lg">点击下方按钮开始与猫咪对话。</p>
+            <h2 className="text-3xl font-bold text-orange-600 mb-4">欢迎来到 Agent Chat</h2>
+            <p className="text-gray-600 mb-6 text-lg">点击下方按钮开始与Agent协作。</p>
             <button onClick={handleStart} className="bg-gradient-to-r from-orange-400 to-orange-600 text-white px-10 py-4 rounded-full font-bold text-xl shadow-lg hover:scale-105 active:scale-95 transition-all">
               开始对话
             </button>
@@ -275,10 +294,12 @@ function App() {
         <h1 className="text-2xl font-bold text-orange-600 tracking-wider flex items-center gap-2"><span>🐾</span>GARFIELD CHAT</h1>
         <button
           onClick={handleToggleCat}
-          disabled={showInterrupt}
-          className={`flex items-center space-x-2 bg-white px-3 py-1.5 rounded-full shadow-md border-2 border-orange-200 ${showInterrupt ? 'opacity-50 cursor-not-allowed' : 'hover:bg-orange-50'}`}
+          disabled={showInterrupt || avatarMode === 'three'}
+          className={`flex items-center space-x-2 bg-white px-3 py-1.5 rounded-full shadow-md border-2 border-orange-200 ${showInterrupt || avatarMode === 'three' ? 'opacity-70 cursor-not-allowed' : 'hover:bg-orange-50'}`}
         >
-          {currentCat.type === CatType.BLACK ? (
+          {avatarMode === 'three' ? (
+            <><div className="rounded-full bg-emerald-700 p-1"><UserIcon className="h-3 w-3 text-white" /></div><span className="text-sm font-bold text-emerald-800">Vanguard</span></>
+          ) : currentCat.type === CatType.BLACK ? (
             <><div className="p-1 bg-slate-800 rounded-full"><UserIcon className="w-3 h-3 text-white" /></div><span className="font-bold text-slate-700 text-sm">Kuro</span></>
           ) : (
             <><div className="p-1 bg-pink-400 rounded-full"><SparklesIcon className="w-3 h-3 text-white" /></div><span className="font-bold text-pink-500 text-sm">Shiro</span></>
@@ -286,22 +307,29 @@ function App() {
         </button>
       </div>
 
+      <div className="z-20 mb-2 flex rounded-full border-2 border-orange-200 bg-white p-1 shadow-sm" aria-label="角色显示模式">
+        <button type="button" onClick={() => setAvatarMode('three')} className={`rounded-full px-4 py-1 text-sm font-semibold transition ${avatarMode === 'three' ? 'bg-orange-500 text-white' : 'text-slate-600'}`} aria-pressed={avatarMode === 'three'}>
+          Three.js 3D
+        </button>
+        <button type="button" onClick={() => setAvatarMode('css')} className={`rounded-full px-4 py-1 text-sm font-semibold transition ${avatarMode === 'css' ? 'bg-orange-500 text-white' : 'text-slate-600'}`} aria-pressed={avatarMode === 'css'}>
+          CSS 猫咪
+        </button>
+      </div>
+
       <DiagnosticsPanel />
 
       <div className="flex-1 w-full max-w-md flex flex-col relative z-10">
         <div className="flex-1 flex items-center justify-center min-h-[250px]">
-          <CatAvatar
+          <AvatarStage
+            mode={avatarMode}
+            state={agentState}
             config={currentCat}
-            isSpeaking={isSpeaking}
-            isListening={isListening}
-            isThinking={isThinking}
-            onCatClick={() => undefined}
-            onMultipleClicks={handleMultipleClicks}
             showAngryCat={showAngryCat}
-          />
-        </div>
+            onMultipleClicks={handleMultipleClicks}
+            onModeChange={setAvatarMode}
+          />        </div>
         <ConversationPanel
-          messages={messages[currentCat.type]}
+          messages={messages[activeCharacter.type]}
           inputText={inputText}
           isListening={isListening}
           isProcessingVoice={isProcessingVoice}

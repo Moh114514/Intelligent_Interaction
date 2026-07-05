@@ -17,7 +17,7 @@
     "data": { "type": "object" }
   },
   "$defs": {
-    "characterId": { "type": "string", "enum": ["BLACK", "WHITE"] },
+    "characterId": { "type": "string", "enum": ["BLACK", "WHITE", "SOLDIER"] },
     "clientMessageData": {
       "type": "object",
       "additionalProperties": false,

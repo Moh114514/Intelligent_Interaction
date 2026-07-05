@@ -95,6 +95,12 @@ def test_streaming_multiturn_history_and_character_isolation(tmp_path: Path) -> 
             assert [message["content"] for message in provider.calls[2][0]] == ["White"]
             assert provider.calls[0][1] != provider.calls[2][1]
 
+            websocket.send_json(event("client.message", "request-4", data={"content": "Report", "character_id": "SOLDIER"}))
+            receive_turn(websocket)
+            assert [message["content"] for message in provider.calls[3][0]] == ["Report"]
+            assert "Vanguard" in provider.calls[3][1]
+            assert provider.calls[3][1] not in {provider.calls[0][1], provider.calls[2][1]}
+
 
 def test_request_cancel_and_busy_error(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path), provider=SlowProvider())

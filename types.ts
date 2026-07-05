@@ -1,6 +1,7 @@
 export enum CatType {
   BLACK = 'BLACK',
-  WHITE = 'WHITE'
+  WHITE = 'WHITE',
+  SOLDIER = 'SOLDIER'
 }
 
 export interface ChatMessage {

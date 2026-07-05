@@ -29,6 +29,17 @@ SEARCH_EXTENSIONS = TEXT_EXTENSIONS | DOCUMENT_EXTENSIONS | MEDIA_EXTENSIONS
 MAX_TEXT_BYTES = 64 * 1024
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 MAX_CLIPBOARD_CHARS = 10_000
+
+
+def windows_marketing_release(build: int, fallback: str, product_type: int = 1) -> str:
+    """Return the desktop Windows marketing version from its build number."""
+    if product_type != 1:
+        return fallback
+    if build >= 22000:
+        return "11"
+    if build >= 10240:
+        return "10"
+    return fallback
 SENSITIVE_DIRS = {
     "windows", "program files", "program files (x86)", "programdata", "recovery",
     "$recycle.bin", "system volume information", "appdata", ".ssh", ".gnupg",
@@ -184,12 +195,12 @@ class FileAdapter:
         exact = self._query_path(query)
         if exact is not None:
             target = self._validate_path(exact, must_exist=True)
-            return f"Resolve exact file path: {self._display_path(target)}"
-        return f"Search fixed local drives for file names containing: {query}"
+            return f"\u786e\u8ba4\u7cbe\u786e\u6587\u4ef6\u8def\u5f84\uff1a{self._display_path(target)}"
+        return f"\u5728\u672c\u5730\u56fa\u5b9a\u78c1\u76d8\u4e2d\u641c\u7d22\u6587\u4ef6\u540d\uff1a{query}"
 
     def search_details(self, query: str) -> dict[str, Any]:
         exact = self._query_path(query)
-        target = self._display_path(self._validate_path(exact, must_exist=True)) if exact is not None else "Non-sensitive fixed local drives"
+        target = self._display_path(self._validate_path(exact, must_exist=True)) if exact is not None else "\u672c\u5730\u56fa\u5b9a\u78c1\u76d8\u7684\u975e\u654f\u611f\u533a\u57df"
         return {
             "target": target,
             "operation": "search",
@@ -426,7 +437,26 @@ class WindowsDesktopAdapter:
         return datetime.now().astimezone().isoformat()
 
     def system_info(self) -> dict[str, str]:
-        return {"operating_system": platform.system(), "release": platform.release(), "architecture": platform.machine(), "python": platform.python_version()}
+        info = {
+            "operating_system": platform.system(),
+            "release": platform.release(),
+            "architecture": platform.machine(),
+            "python": platform.python_version(),
+        }
+        if sys.platform == "win32":
+            version = sys.getwindowsversion()
+            release = windows_marketing_release(version.build, platform.release(), version.product_type)
+            edition = platform.win32_edition()
+            info.update({
+                "operating_system": "Windows",
+                "release": release,
+                "display_name": " ".join(part for part in ("Windows", release, edition) if part),
+                "build": str(version.build),
+                "kernel_version": platform.version(),
+            })
+            if edition:
+                info["edition"] = edition
+        return info
 
     def open_url(self, url: str) -> str:
         parsed = urlsplit(url.strip())

@@ -5,7 +5,8 @@ export type MessageHistory = Record<CatType, ChatMessage[]>;
 
 export const createMessageHistory = (): MessageHistory => ({
   [CatType.BLACK]: [],
-  [CatType.WHITE]: []
+  [CatType.WHITE]: [],
+  [CatType.SOLDIER]: []
 });
 
 export function appendMessage(

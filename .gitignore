@@ -13,20 +13,18 @@ release/
 .env
 .env.local
 api.config.ts
+/test1.txt
+/3D模型/
 
-# Refactor runtime artifacts
+# Runtime artifacts
 .venv/
 __pycache__/
 *.py[cod]
 *.db
 *.sqlite*
 backend/logs/
-unity/Library/
-unity/Temp/
-unity/Logs/
-apps/renderer/public/unity-build/
 
-# Editor directories and files
+# Editor files
 .vscode/*
 !.vscode/extensions.json
 .idea

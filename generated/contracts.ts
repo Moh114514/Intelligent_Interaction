@@ -2,7 +2,7 @@
 
 export type AgentState = 'idle' | 'listening' | 'recognizing' | 'thinking' | 'confirming' | 'acting' | 'speaking' | 'error';
 export type AgentEventType = 'client.message' | 'agent.state' | 'assistant.delta' | 'assistant.message' | 'tool.confirmation_required' | 'tool.confirmation_response' | 'tool.result' | 'request.cancel' | 'request.cancelled' | 'diagnostics.echo.request' | 'diagnostics.echo.response' | 'backend.status' | 'error';
-export type CharacterId = 'BLACK' | 'WHITE';
+export type CharacterId = 'BLACK' | 'WHITE' | 'SOLDIER';
 export type ToolRiskLevel = 'L0' | 'L1' | 'L2' | 'L3';
 
 export interface ClientMessageData { content: string; character_id: CharacterId; }

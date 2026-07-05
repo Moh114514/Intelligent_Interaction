@@ -1,13 +1,17 @@
 # Architecture migration
 
-The repository is being migrated incrementally so every phase stays runnable.
+The repository is migrated incrementally so every phase remains runnable.
 
-Current phase 0-1 boundaries:
+Current boundaries:
 
-- `features/conversation`: message history and conversation controls.
-- `features/speech`: recording interfaces and browser audio playback lifecycle.
-- `features/avatar`: the current CSS avatar boundary; Unity will replace its implementation in phase 6.
-- `contracts`: protocol source of truth. Generated TypeScript and Python files are never edited by hand.
-- Legacy provider code remains under `services` until the Python Agent migration in phases 2-4.
+- `features/conversation`: per-character message history and conversation controls.
+- `features/speech`: recording and Renderer audio playback until phase 7.
+- `features/avatar`: selectable CSS and direct Three.js renderers, local mode preference, responsive model framing and AgentState animation control.
+- `services/agentClient`: authenticated Renderer-to-Python event transport.
+- `contracts`: protocol source of truth; generated TypeScript and Python files are not edited manually.
+- `backend`: provider, prompts, Agent runtime, secure tools and audit lifecycle.
+- `public/models/vanguard-soldier.glb`: self-contained runtime model, materials, textures, skin and root-locked Talking animation.
 
-Target ownership and security boundaries remain those in the refactor plan: Renderer owns UI, Electron owns privileged lifecycle and IPC, Python owns Agent/provider/tool business logic, and Unity owns visual presentation only.
+React owns visual state and Three.js only renders presentation. The 3D renderer never connects to Python, stores business state or executes tools. CSS and 3D are explicit peer modes; a 3D load failure remains isolated from conversation, tool and speech flows and never changes mode automatically.
+
+The `SOLDIER` protocol identity is selected only in 3D mode and has independent frontend/backend history. BLACK and WHITE remain the two CSS cat identities.

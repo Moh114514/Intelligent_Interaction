@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.tools.adapters import FileAdapter
+from backend.app.tools.adapters import FileAdapter, windows_marketing_release
 from backend.app.tools.models import ToolError
 from backend.app.tools.registry import create_default_registry
 
@@ -131,7 +131,7 @@ def test_registry_executes_with_injected_desktop_without_real_side_effects(tmp_p
     registry = create_default_registry(files.root, files=files, desktop=desktop)
     details = registry.confirmation_details("clipboard.write_text", {"text": "safe"})
     assert details == {
-        "target": "Clipboard", "operation": "clipboard", "content": "safe",
+        "target": "\u526a\u8d34\u677f", "operation": "clipboard", "content": "safe",
         "content_length": 4, "will_create_backup": False,
     }
     result = asyncio.run(registry.execute("clipboard.write_text", {"text": "safe"}))
@@ -175,3 +175,17 @@ def test_exact_filename_match_returns_before_full_scan(tmp_path: Path) -> None:
     result = files.search_names("test1.txt")
     assert result["results"][0]["name"] == "test1.txt"
     assert result["stopped_reason"] == "exact_match"
+
+def test_windows_marketing_release_uses_build_number() -> None:
+    assert windows_marketing_release(26100, "10") == "11"
+    assert windows_marketing_release(22621, "10") == "11"
+    assert windows_marketing_release(19045, "10") == "10"
+    assert windows_marketing_release(26100, "Server", product_type=3) == "Server"
+
+
+def test_confirmation_summaries_are_chinese(tmp_path: Path) -> None:
+    files = adapter(tmp_path)
+    registry = create_default_registry(files.root, files=files, desktop=FakeDesktop())
+    assert registry.confirmation_summary("clipboard.write_text", {"text": "safe"}) == "\u5199\u5165\u526a\u8d34\u677f"
+    assert "\u641c\u7d22\u6587\u4ef6\u540d" in registry.confirmation_summary("files.search_names", {"query": "note", "max_results": 20})
+    assert registry.confirmation_details("files.search_names", {"query": "note", "max_results": 20})["target"] == "\u672c\u5730\u56fa\u5b9a\u78c1\u76d8\u7684\u975e\u654f\u611f\u533a\u57df"

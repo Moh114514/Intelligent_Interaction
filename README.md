@@ -5,7 +5,7 @@ Garfield Chat is a Windows Electron application with a React renderer and an aut
 ## Architecture
 
 - Electron owns the Python sidecar lifecycle, random loopback port and one-time authentication token.
-- React renders conversations, character state and diagnostics.
+- React renders conversations, character state, diagnostics and selectable CSS/Three.js avatar modes.
 - Python owns LLM credentials, character prompts, multi-turn history, streaming and cancellation.
 - Text generation uses an OpenAI-compatible provider; the default configuration targets DeepSeek.
 - Speech recognition and synthesis remain separate Renderer services until phase 7.
@@ -46,11 +46,20 @@ Search resolves exact absolute paths immediately or uses prioritized breadth-fir
 
 Text creation accepts an approved absolute path; replacement requires a searched file ID, verifies that the file has not changed, creates a timestamped backup and then atomically replaces it. The Agent cannot delete, move, rename, execute or write binary files. Audit logs contain statuses and redacted targets, never file or clipboard content.
 
+## Avatar modes
+
+CSS cats and the Three.js Vanguard character are peer renderers selected explicitly by the user. Three.js is the first-run default; an existing `unity` preference is migrated automatically, and the last selection is stored locally. A 3D load error exposes retry and manual CSS-switch actions without interrupting chat.
+
+The ignored `3D模型/` directory remains the user-provided upstream Unity project. Its FBX model, Talking clip and textures are converted once with `scripts/convert-vanguard.py` into the committed `public/models/vanguard-soldier.glb`. Normal development and packaging do not require Unity or Blender.
+
+Three.js frames the complete model from its runtime bounding box and removes root/Hips translation from the Talking clip. The 3D mode uses an independent `SOLDIER` identity, session history and Vanguard veteran prompt; CSS mode retains Kuro and Shiro unchanged.
+
 ## Verification
 
 - `npm run verify:m1`: M1 regression suite
 - `npm run test:renderer`: AgentClient and streaming UI tests
 - `npm run verify:m2`: complete M2 suite
 - `npm run verify:m3`: complete M3 tool and M2 regression suite
+- `npm run verify:m4`: complete M4 avatar and M3 regression suite
 - `npm run electron:build`: Windows installer build
 - `npm run smoke:electron`: packaged startup and sidecar cleanup test
