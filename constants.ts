@@ -19,3 +19,12 @@ export const WHITE_CAT_CONFIG: CatConfig = {
   avatarTalk: 'https://picsum.photos/seed/whitecattalk/400/400',
   themeColor: 'bg-pink-500'
 };
+export const SOLDIER_CONFIG: CatConfig = {
+  type: CatType.SOLDIER,
+  name: 'Vanguard',
+  gender: 'male',
+  voiceName: 'x5_lingfeiyi_flow',
+  avatarIdle: '',
+  avatarTalk: '',
+  themeColor: 'bg-emerald-700'
+};

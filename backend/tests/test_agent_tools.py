@@ -9,7 +9,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 import pytest
 
-from backend.app.agent.runtime import AgentRuntime
+from backend.app.agent.runtime import AgentRuntime, required_l0_tools
 
 from backend.app.core.config import Settings
 from backend.app.main import create_app
@@ -240,7 +240,7 @@ def test_natural_language_l0_intents_are_routed_deterministically(tmp_path: Path
         websocket.send_json(event(
             "client.message",
             "request-natural-l0",
-            {"content": "现在是几点，并查询一下我的电脑信息", "character_id": "BLACK"},
+            {"content": "\u73b0\u5728\u662f\u51e0\u70b9\uff0c\u5e76\u67e5\u8be2\u4e00\u4e0b\u6211\u7684\u7535\u8111\u4fe1\u606f", "character_id": "BLACK"},
         ))
         received = [websocket.receive_json() for _ in range(9)]
 
@@ -292,3 +292,39 @@ def test_denied_text_creation_has_no_filesystem_side_effect(tmp_path: Path) -> N
     audit = (tmp_path / "logs" / "tool-audit.jsonl").read_text(encoding="utf-8")
     assert "must not be written" not in audit
     assert '"confirmation_result":"denied"' in audit
+
+class DefinitionCapturingProvider(LLMProvider):
+    supports_tool_calls = True
+
+    def __init__(self) -> None:
+        self.tool_names: list[str] = []
+        self.system_prompt = ""
+
+    async def stream_chat(self, *, messages: Sequence[ChatMessage], system_prompt: str) -> AsyncIterator[str]:
+        if False:
+            yield ""
+
+    async def stream_turn(self, *, messages: Sequence[ChatMessage], system_prompt: str, tools: Sequence[dict[str, Any]]):
+        self.tool_names = [str(item["function"]["name"]) for item in tools]
+        self.system_prompt = system_prompt
+        yield "\u8bf7\u63d0\u4f9b\u8981\u521b\u5efa\u6587\u4ef6\u7684\u5b8c\u6574\u8def\u5f84\u3002"
+
+
+def test_unrelated_file_request_does_not_expose_ephemeral_l0_tools(tmp_path: Path) -> None:
+    content = "\u65b0\u5efa\u4e00\u4e2a\u540d\u4e3atest2.txt\u7684\u6587\u4ef6\uff0c\u91cc\u9762\u968f\u4fbf\u5199\u70b9\u4f60\u60f3\u5199\u7684\u4e1c\u897f"
+    assert required_l0_tools(content) == []
+    provider = DefinitionCapturingProvider()
+    app = create_app(settings(tmp_path), provider=provider)
+    with TestClient(app) as client, connect(client) as websocket:
+        websocket.send_json(event("client.message", "request-no-diagnostics", {"content": content, "character_id": "BLACK"}))
+        received = [websocket.receive_json() for _ in range(4)]
+
+    assert not [item for item in received if item["type"] == "tool.result"]
+    assert "system_current_time" not in provider.tool_names
+    assert "system_info" not in provider.tool_names
+    assert "Do not append unrelated facts" in provider.system_prompt
+
+
+def test_explicit_time_and_system_intent_is_still_detected() -> None:
+    assert required_l0_tools("\u73b0\u5728\u51e0\u70b9\uff1f") == ["system.current_time"]
+    assert required_l0_tools("\u6211\u7684Windows\u7248\u672c\u662f\u4ec0\u4e48\uff1f") == ["system.info"]

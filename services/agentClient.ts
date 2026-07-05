@@ -2,10 +2,10 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   AgentEvent,
   AgentState,
+  CharacterId,
   ToolConfirmationRequiredData,
   ToolResultData
 } from '../generated/contracts';
-import { CatType } from '../types';
 
 export class AgentClientError extends Error {
   constructor(
@@ -43,7 +43,7 @@ export class AgentClient {
 
   sendMessage(
     sessionId: string,
-    characterId: CatType,
+    characterId: CharacterId,
     content: string,
     handlers: AgentMessageHandlers = {}
   ): AgentRequest {

@@ -33,7 +33,7 @@ class ClientMessageData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     content: str = Field(min_length=1)
-    character_id: str = Field(pattern=r"^(BLACK|WHITE)$")
+    character_id: str = Field(pattern=r"^(BLACK|WHITE|SOLDIER)$")
 
 
 class ToolConfirmationResponseData(BaseModel):

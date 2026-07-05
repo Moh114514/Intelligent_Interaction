@@ -101,16 +101,16 @@ def create_default_registry(
 
     empty = object_schema({})
     text = {"type": "string", "maxLength": 65536}
-    add("system.current_time", "Get the current local time with timezone.", "L0", empty, lambda _: desktop_adapter.current_time(), lambda _: "Read current time")
-    add("system.info", "Get basic operating system, architecture, and Python version.", "L0", empty, lambda _: desktop_adapter.system_info(), lambda _: "Read basic system information")
-    add("desktop.open_url", "Open an HTTP or HTTPS URL in the default browser.", "L1", object_schema({"url": {"type": "string", "minLength": 1, "maxLength": 2048}}, ["url"]), lambda args: desktop_adapter.open_url(args["url"]), lambda args: f"Open URL host: {url_host(args['url'])}")
-    add("desktop.open_app", "Open an allowlisted Windows application.", "L1", object_schema({"application": {"type": "string", "enum": ["notepad", "calculator", "explorer"]}}, ["application"]), lambda args: desktop_adapter.open_app(args["application"]), lambda args: f"Open application: {args['application']}")
-    add("clipboard.read_text", "Read plain text from the Windows clipboard.", "L1", empty, lambda _: desktop_adapter.read_clipboard(), lambda _: "Read clipboard text")
+    add("system.current_time", "Get the current local time with timezone.", "L0", empty, lambda _: desktop_adapter.current_time(), lambda _: "\u8bfb\u53d6\u5f53\u524d\u65f6\u95f4")
+    add("system.info", "Get basic operating system, architecture, and Python version.", "L0", empty, lambda _: desktop_adapter.system_info(), lambda _: "\u8bfb\u53d6\u57fa\u672c\u7cfb\u7edf\u4fe1\u606f")
+    add("desktop.open_url", "Open an HTTP or HTTPS URL in the default browser.", "L1", object_schema({"url": {"type": "string", "minLength": 1, "maxLength": 2048}}, ["url"]), lambda args: desktop_adapter.open_url(args["url"]), lambda args: f"\u6253\u5f00\u7f51\u5740\uff1a{url_host(args['url'])}")
+    add("desktop.open_app", "Open an allowlisted Windows application.", "L1", object_schema({"application": {"type": "string", "enum": ["notepad", "calculator", "explorer"]}}, ["application"]), lambda args: desktop_adapter.open_app(args["application"]), lambda args: f"\u6253\u5f00\u5e94\u7528\uff1a{args['application']}")
+    add("clipboard.read_text", "Read plain text from the Windows clipboard.", "L1", empty, lambda _: desktop_adapter.read_clipboard(), lambda _: "\u8bfb\u53d6\u526a\u8d34\u677f\u6587\u672c")
     add(
         "clipboard.write_text", "Replace Windows clipboard text after user confirmation.", "L2",
         object_schema({"text": {"type": "string", "maxLength": 10000}}, ["text"]),
-        lambda args: desktop_adapter.write_clipboard(args["text"]), lambda _: "Write clipboard text",
-        lambda args: {"target": "Clipboard", "operation": "clipboard", "content": args["text"], "content_length": len(args["text"]), "will_create_backup": False},
+        lambda args: desktop_adapter.write_clipboard(args["text"]), lambda _: "\u5199\u5165\u526a\u8d34\u677f",
+        lambda args: {"target": "\u526a\u8d34\u677f", "operation": "clipboard", "content": args["text"], "content_length": len(args["text"]), "will_create_backup": False},
     )
     add(
         "files.search_names", "Resolve an exact absolute file path or search common document and media filenames on non-sensitive fixed local drives. User confirmation is required.", "L2",
@@ -122,25 +122,25 @@ def create_default_registry(
     add(
         "files.read_file", "Read a searched file by file_id. Text and documents are extracted; media returns metadata. User confirmation is required.", "L2",
         object_schema({"file_id": {"type": "string", "minLength": 1, "maxLength": 64}}, ["file_id"]),
-        lambda args: file_adapter.read_file(args["file_id"]), lambda args: f"Read searched file: {file_adapter.reference_details(args['file_id'])['target']}",
+        lambda args: file_adapter.read_file(args["file_id"]), lambda args: f"\u8bfb\u53d6\u6587\u4ef6\uff1a{file_adapter.reference_details(args['file_id'])['target']}",
         lambda args: file_adapter.reference_details(args["file_id"]),
     )
     add(
         "files.create_text", "Create a new UTF-8 text file at an approved absolute path. User confirmation is required.", "L2",
         object_schema({"path": {"type": "string", "minLength": 3, "maxLength": 1024}, "content": text}, ["path", "content"]),
-        lambda args: file_adapter.create_text(args["path"], args["content"]), lambda args: f"Create text file: {file_adapter.create_details(args['path'], args['content'])['target']}",
+        lambda args: file_adapter.create_text(args["path"], args["content"]), lambda args: f"\u65b0\u5efa\u6587\u672c\u6587\u4ef6\uff1a{file_adapter.create_details(args['path'], args['content'])['target']}",
         lambda args: file_adapter.create_details(args["path"], args["content"]),
     )
     add(
         "files.replace_text", "Replace a searched UTF-8 text file by file_id and create a backup. User confirmation is required.", "L2",
         object_schema({"file_id": {"type": "string", "minLength": 1, "maxLength": 64}, "content": text}, ["file_id", "content"]),
-        lambda args: file_adapter.replace_text(args["file_id"], args["content"]), lambda args: f"Replace searched text file with backup: {file_adapter.replace_details(args['file_id'], args['content'])['target']}",
+        lambda args: file_adapter.replace_text(args["file_id"], args["content"]), lambda args: f"\u8986\u76d6\u6587\u672c\u6587\u4ef6\u5e76\u521b\u5efa\u5907\u4efd\uff1a{file_adapter.replace_details(args['file_id'], args['content'])['target']}",
         lambda args: file_adapter.replace_details(args["file_id"], args["content"]),
     )
     add(
         "files.read_text", "Read one approved UTF-8 text file from the legacy shared directory. User confirmation is required.", "L2",
         object_schema({"relative_path": {"type": "string", "minLength": 1, "maxLength": 260}}, ["relative_path"]),
-        lambda args: file_adapter.read_text(args["relative_path"]), lambda args: f"Read shared file: {Path(args['relative_path']).as_posix()}",
+        lambda args: file_adapter.read_text(args["relative_path"]), lambda args: f"\u8bfb\u53d6\u5171\u4eab\u6587\u4ef6\uff1a{Path(args['relative_path']).as_posix()}",
     )
     return registry
 

@@ -22,10 +22,12 @@
     "electron:dev": "set NODE_ENV=development&& electron .",
     "electron:build": "npm run build && npm run clean:release && electron-builder && npm run security:scan-package",
     "test:renderer": "vitest run tests/renderer",
+    "verify:m4": "npm run verify:m3 && npm run test:avatar",
     "verify:m2": "npm run verify:m1 && npm run test:renderer",
     "verify:m3": "npm run verify:m2",
     "clean:dist": "node scripts/clean-artifacts.mjs dist",
-    "clean:release": "node scripts/clean-artifacts.mjs release"
+    "clean:release": "node scripts/clean-artifacts.mjs release",
+    "test:avatar": "node --test tests/avatar-assets.test.mjs"
   },
   "build": {
     "appId": "com.garfield.chat",
@@ -69,10 +71,12 @@
     "crypto-js": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "three": "^0.180.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^39.2.3",
     "electron-builder": "^26.0.12",

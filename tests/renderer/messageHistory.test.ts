@@ -12,5 +12,6 @@ describe('streaming message history', () => {
     expect(complete[CatType.BLACK]).toEqual([{ id: 'request-1', role: 'model', text: 'Hello' }]);
     expect(removeMessage(complete, CatType.BLACK, 'request-1')[CatType.BLACK]).toEqual([]);
     expect(complete[CatType.WHITE]).toEqual([]);
+    expect(complete[CatType.SOLDIER]).toEqual([]);
   });
 });

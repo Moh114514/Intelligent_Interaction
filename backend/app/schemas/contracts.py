@@ -32,6 +32,7 @@ class AgentEventType(str, Enum):
 class CharacterId(str, Enum):
     BLACK = "BLACK"
     WHITE = "WHITE"
+    SOLDIER = "SOLDIER"
 
 class ToolRiskLevel(str, Enum):
     L0 = "L0"

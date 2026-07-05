@@ -20,8 +20,8 @@ from backend.app.tools.registry import ToolRegistry
 def required_l0_tools(content: str) -> list[str]:
     normalized = content.casefold()
     selected: list[str] = []
-    time_markers = ("几点", "当前时间", "现在时间", "今天日期", "当前日期", "current time", "what time", "current date")
-    system_markers = ("电脑信息", "系统信息", "操作系统", "computer info", "system info", "operating system")
+    time_markers = ("\u51e0\u70b9", "\u5f53\u524d\u65f6\u95f4", "\u73b0\u5728\u65f6\u95f4", "\u4eca\u5929\u51e0\u53f7", "\u4eca\u5929\u65e5\u671f", "\u5f53\u524d\u65e5\u671f", "current time", "what time", "current date")
+    system_markers = ("\u7535\u8111\u4fe1\u606f", "\u7cfb\u7edf\u4fe1\u606f", "\u64cd\u4f5c\u7cfb\u7edf", "windows\u7248\u672c", "\u7cfb\u7edf\u7248\u672c", "computer info", "system info", "operating system")
     if any(marker in normalized for marker in time_markers):
         selected.append("system.current_time")
     if any(marker in normalized for marker in system_markers):
@@ -116,7 +116,13 @@ class AgentRuntime:
                 working.append({"role": "tool", "tool_call_id": call.id, "content": result.content})
             yield AgentOutput("state", {"state": "thinking"})
 
-        tool_definitions = self.registry.definitions()
+        # Current time/date and system facts are ephemeral. They are executed by
+        # the deterministic router only when the current message explicitly asks.
+        ephemeral_l0 = {"system_current_time", "system_info"}
+        tool_definitions = [
+            definition for definition in self.registry.definitions()
+            if definition.get("function", {}).get("name") not in ephemeral_l0
+        ]
         system_prompt = compose_system_prompt(character_id, tool_definitions)
 
         while True:

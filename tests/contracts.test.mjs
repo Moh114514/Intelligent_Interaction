@@ -11,6 +11,11 @@ test('event envelope keeps all correlation fields required', async () => {
   assert.equal(schema.additionalProperties, false);
 });
 
+
+test('character contract includes the independent 3D soldier identity', async () => {
+  const schema = await readJson('contracts/events.schema.json');
+  assert.deepEqual(schema.$defs.characterId.enum, ['BLACK', 'WHITE', 'SOLDIER']);
+});
 test('agent state contract contains the eight V1 states', async () => {
   const schema = await readJson('contracts/agent-states.json');
   assert.deepEqual(schema.enum, ['idle', 'listening', 'recognizing', 'thinking', 'confirming', 'acting', 'speaking', 'error']);
