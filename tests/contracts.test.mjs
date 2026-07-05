@@ -34,3 +34,12 @@ test('generated TypeScript and Python contracts come from the same schemas', asy
 test('generated contract checks are insensitive to platform line endings', () => {
   assert.equal(normalizeText('first\r\nsecond\r\n'), 'first\nsecond\n');
 });
+
+test('audio contract fixes whole-file ASR and one-time TTS metadata', async () => {
+  const schema = await readJson('contracts/audio.schema.json');
+  assert.equal(schema.$defs.asrResponse.properties.sample_rate.const, 16000);
+  assert.deepEqual(schema.$defs.ttsRequest.properties.character_id.$ref, '#/$defs/characterId');
+  const outputs = await renderContracts();
+  assert.match(outputs.get('generated/contracts.ts'), /interface AsrResponse/);
+  assert.match(outputs.get('backend/app/schemas/contracts.py'), /class TtsResponse/);
+});

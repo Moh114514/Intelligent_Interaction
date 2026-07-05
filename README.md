@@ -8,17 +8,17 @@ Garfield Chat is a Windows Electron application with a React renderer and an aut
 - React renders conversations, character state, diagnostics and selectable CSS/Three.js avatar modes.
 - Python owns LLM credentials, character prompts, multi-turn history, streaming and cancellation.
 - Text generation uses an OpenAI-compatible provider; the default configuration targets DeepSeek.
-- Speech recognition and synthesis remain separate Renderer services until phase 7.
+- Python owns ASR/TTS credentials and Provider calls; the Renderer only records standard WAV and plays returned audio.
 
 ## Development
 
 1. Install JavaScript dependencies with `npm ci`.
 2. Install Python dependencies from `backend/pyproject.toml`.
-3. Copy `backend/.env.example` to `backend/.env.local` and set `LLM_API_KEY`.
+3. Copy `backend/.env.example` to `backend/.env.local` and set the LLM and selected speech-provider credentials.
 4. Run `npm run dev`.
 5. In another terminal run `npm run electron:dev`.
 
-Do not place LLM credentials in root `.env.local`, `api.config.ts`, Vite variables or Renderer code.
+Do not place LLM or speech credentials in root `.env.local`, `api.config.ts`, Vite variables or Renderer code.
 
 ## Configuration
 
@@ -36,7 +36,7 @@ Python Agent configuration:
 
 Development reads `backend/.env.local`. Packaged builds read `%APPDATA%\Garfield Chat\backend.env`.
 
-Speech credentials remain in ignored `api.config.ts` until their phase 7 migration.
+Speech defaults to Volcengine Doubao Speech 2.0. Set `SPEECH_PROVIDER=volcengine` and the three `SPEECH_VOICE_*` speaker IDs. For the old Doubao Speech console, configure `VOLCENGINE_APP_ID` plus `VOLCENGINE_ACCESS_TOKEN`; for the new console, configure `VOLCENGINE_SPEECH_API_KEY`. `VOLCENGINE_AUTH_MODE=auto` selects the available credential family. Set `SPEECH_PROVIDER=xunfei` plus the Xunfei credentials to use the compatibility adapter. Missing speech configuration never prevents text chat or backend startup.
 
 ## Local tools
 
@@ -61,5 +61,6 @@ Three.js frames the complete model from its runtime bounding box and removes roo
 - `npm run verify:m2`: complete M2 suite
 - `npm run verify:m3`: complete M3 tool and M2 regression suite
 - `npm run verify:m4`: complete M4 avatar and M3 regression suite
+- `npm run verify:m5`: complete Python speech, audio API, Renderer voice and M4 regression suite
 - `npm run electron:build`: Windows installer build
 - `npm run smoke:electron`: packaged startup and sidecar cleanup test

@@ -37,6 +37,7 @@ export class ThreeAvatarScene {
   private timeout = 0;
   private frame: CameraFrame | null = null;
   private state: AgentState = 'idle';
+  private speechLevel = 0;
   private disposed = false;
 
   constructor(private readonly container: HTMLElement, private readonly handlers: SceneHandlers) {
@@ -106,6 +107,13 @@ export class ThreeAvatarScene {
     this.applyState();
   }
 
+  setSpeechLevel(level: number): void {
+    this.speechLevel = THREE.MathUtils.clamp(level, 0, 1);
+    if (this.talkingAction && this.state === 'speaking') {
+      this.talkingAction.setEffectiveTimeScale(0.75 + this.speechLevel * 0.75);
+      this.talkingAction.setEffectiveWeight(0.6 + this.speechLevel * 0.4);
+    }
+  }
   dispose(): void {
     this.disposed = true;
     window.clearTimeout(this.timeout);

@@ -1,4 +1,2 @@
-export { BrowserSpeechService, RestApiSpeechService } from '../../services/speechRecognition';
-export type { ISpeechService } from '../../services/speechRecognition';
-export { decodeAudioData, decodeBase64 } from '../../services/audioUtils';
+export { PcmRecorder, encodeWav, resample } from './pcmRecorder';
 export { useAudioPlayback } from './useAudioPlayback';

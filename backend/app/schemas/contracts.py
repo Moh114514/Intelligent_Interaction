@@ -72,6 +72,24 @@ class ToolResultData(BaseModel):
     status: str = Field(pattern=r"^(succeeded|denied|failed|timed_out|cancelled)$")
     summary: str
 
+class AsrResponse(BaseModel):
+    text: str
+    language: str
+    duration_ms: int
+    sample_rate: int
+    channels: int
+
+class TtsRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    character_id: CharacterId
+
+class TtsResponse(BaseModel):
+    audio_id: str
+    mime_type: str
+    sample_rate: int
+    channels: int
+    expires_at: str
+
 class AgentEvent(BaseModel):
     type: AgentEventType
     version: str = Field(pattern=r"^1\.0$")
