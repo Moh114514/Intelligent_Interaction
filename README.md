@@ -73,3 +73,9 @@ A WebSocket disconnect cancels the active request and marks it interrupted; requ
 - npm run verify:m6: complete SQLite, multi-session, reconnect and M5 regression suite
 - `npm run electron:build`: Windows installer build
 - `npm run smoke:electron`: packaged startup and sidecar cleanup test
+
+## Long-term memory (Phase 8.5)
+
+Approved long-term memories are stored locally in SQLite and shared by all sessions and characters. Pending candidates never enter the Agent prompt until the user approves them in the memory panel. Explicit remember, update, and forget requests use L2 confirmation. Forgetting permanently deletes the row with SQLite secure deletion and a truncated WAL checkpoint.
+
+Automatic extraction is heuristic-gated, runs after a successful visible exchange, reuses the configured LLM provider, and never blocks chat. Credentials, tokens, payment data, government identifiers, file contents, and tool output are excluded. Run `npm run verify:m6-5` for the complete acceptance suite.

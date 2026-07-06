@@ -11,7 +11,7 @@ export interface AgentStateData { state: AgentState; }
 export interface AssistantDeltaData { delta: string; }
 export interface AssistantMessageData { content: string; }
 
-export interface ToolConfirmationDetails { target?: string; operation?: 'search' | 'read' | 'create' | 'replace' | 'clipboard'; content?: string | null; content_length?: number | null; will_create_backup?: boolean; }
+export interface ToolConfirmationDetails { target?: string; operation?: 'search' | 'read' | 'create' | 'replace' | 'clipboard' | 'remember' | 'update' | 'forget'; content?: string | null; content_length?: number | null; will_create_backup?: boolean; }
 
 export interface ToolConfirmationRequiredData { confirmation_id: string; tool_call_id: string; tool_name: string; risk_level: 'L2'; summary: string; expires_at: string; details?: ToolConfirmationDetails | null; }
 export interface ToolConfirmationResponseData { confirmation_id: string; approved: boolean; }
@@ -25,6 +25,12 @@ export interface TtsResponse { audio_id: string; mime_type: 'audio/wav'; sample_
 export interface SessionSummary { id: string; title: string; summary: string; archived: boolean; archived_at?: string | null; created_at: string; updated_at: string; }
 export interface PersistedMessage { id: string; request_id: string; role: 'user' | 'assistant'; character_id: CharacterId; content: string; created_at: string; }
 export interface UserConfig { active_session_id: string | null; avatar_mode: 'three' | 'css'; css_character: 'BLACK' | 'WHITE'; volume: number; }
+export type MemoryStatus = 'pending' | 'active';
+export type MemoryCategory = 'profile' | 'preference' | 'instruction' | 'project';
+export interface LongTermMemory { id: string; status: MemoryStatus; category: MemoryCategory; content: string; keywords: string[]; importance: number; pinned: boolean; source_session_id?: string | null; source_request_id?: string | null; created_at: string; updated_at: string; last_used_at?: string | null; }
+export interface MemoryPage { items: LongTermMemory[]; limit: number; offset: number; has_more: boolean; }
+export interface MemoryCreateInput { content: string; category: MemoryCategory; importance?: number; pinned?: boolean; }
+export interface MemoryUpdateInput { content?: string; category?: MemoryCategory; importance?: number; pinned?: boolean; }
 export type PersistedRequestStatus = 'running' | 'confirming' | 'completed' | 'cancelled' | 'failed' | 'interrupted';
 export interface PersistedRequest { request_id: string; session_id: string; character_id: CharacterId; status: PersistedRequestStatus; error_code?: string | null; assistant_content?: string | null; }
 

@@ -177,6 +177,8 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime, store: SQLite
                         await send_event(incoming, "tool.result", output.data)
                 final_content = strip_role_prefix("".join(chunks), final=True).strip()
                 store.complete_request(incoming.request_id, message.content.strip(), final_content)
+                if message.interaction_type == "message" and agent_runtime.memory_service is not None:
+                    agent_runtime.memory_service.schedule_extraction(message.content.strip(), incoming.session_id, incoming.request_id)
                 await send_event(incoming, "assistant.message", {"content": final_content})
             except asyncio.CancelledError:
                 if incoming.request_id in disconnecting_requests:

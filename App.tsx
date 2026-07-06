@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { AvatarMode, AvatarStage, loadAvatarMode } from './features/avatar';
 import { DiagnosticsPanel } from './features/diagnostics';
+import { MemoryPanel } from './features/memory';
 import { ConversationPanel, SessionDrawer, appendMessage, createMessageHistory, MessageHistory, removeMessage, upsertModelMessage } from './features/conversation';
 import { PcmRecorder, useAudioPlayback } from './features/speech';
 import { BLACK_CAT_CONFIG, SOLDIER_CONFIG, WHITE_CAT_CONFIG } from './constants';
@@ -24,6 +25,7 @@ function App() {
   const [archivedSessions, setArchivedSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -452,12 +454,15 @@ function App() {
         archivedSessions={archivedSessions}
         activeSessionId={activeSessionId}
         onClose={() => setSessionDrawerOpen(false)}
+        onOpenMemory={() => { setSessionDrawerOpen(false); setMemoryPanelOpen(true); }}
         onCreate={() => void createSession()}
         onSelect={(id) => void selectSession(id)}
         onRename={(id, title) => void renameSession(id, title)}
         onArchive={(id) => void archiveSession(id)}
         onRestore={(id) => void restoreSession(id)}
       />
+
+      <MemoryPanel open={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />
 
       <DiagnosticsPanel />
 

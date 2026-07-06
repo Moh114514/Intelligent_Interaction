@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from backend.app.api.auth import require_http_token
 from backend.app.core.config import Settings
-from backend.app.memory import SQLiteStore
+from backend.app.memory import DatabaseError, MemoryService, SQLiteStore
 from backend.app.agent.text import strip_role_prefix
 
 DEFAULT_CONFIG = {
@@ -24,6 +24,23 @@ class SessionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, min_length=1, max_length=80)
     archived: bool | None = None
+
+MemoryCategory = Literal["profile", "preference", "instruction", "project"]
+MemoryStatus = Literal["active", "pending"]
+
+class MemoryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str = Field(min_length=1, max_length=500)
+    category: MemoryCategory
+    importance: int = Field(default=3, ge=1, le=5)
+    pinned: bool = False
+
+class MemoryUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str | None = Field(default=None, min_length=1, max_length=500)
+    category: MemoryCategory | None = None
+    importance: int | None = Field(default=None, ge=1, le=5)
+    pinned: bool | None = None
 
 class ConfigUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -69,7 +86,7 @@ def read_safe_logs(log_dir: Path, request_id: str | None, limit: int) -> list[di
         return []
     return result
 
-def create_memory_router(settings: Settings, store: SQLiteStore) -> APIRouter:
+def create_memory_router(settings: Settings, store: SQLiteStore, memories: MemoryService) -> APIRouter:
     router = APIRouter(prefix="/api/v1", dependencies=[Depends(require_http_token(settings))])
 
     @router.post("/sessions")
@@ -107,6 +124,51 @@ def create_memory_router(settings: Settings, store: SQLiteStore) -> APIRouter:
         if payload.active_session_id is not None and not store.get_session(payload.active_session_id):
             raise HTTPException(422, "Unknown active session")
         return {**DEFAULT_CONFIG, **store.update_settings(values)}
+
+    @router.get("/memories")
+    async def list_memories(
+        status: MemoryStatus = "active", limit: int = Query(default=20, ge=1, le=50),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        items = memories.list(status, limit=limit + 1, offset=offset)
+        return {"items": items[:limit], "limit": limit, "offset": offset, "has_more": len(items) > limit}
+
+    @router.post("/memories")
+    async def create_memory(payload: MemoryCreate) -> dict[str, Any]:
+        try:
+            return memories.create(content=payload.content, category=payload.category, importance=payload.importance, pinned=payload.pinned)
+        except DatabaseError as error:
+            raise HTTPException(422, str(error)) from error
+
+    @router.patch("/memories/{memory_id}")
+    async def update_memory(memory_id: str, payload: MemoryUpdate) -> dict[str, Any]:
+        try:
+            current = memories.get(memory_id)
+            return memories.update(
+                memory_id,
+                content=payload.content if payload.content is not None else current["content"],
+                category=payload.category if payload.category is not None else current["category"],
+                importance=payload.importance if payload.importance is not None else current["importance"],
+                pinned=payload.pinned if payload.pinned is not None else current["pinned"],
+                keywords=current["keywords"] if payload.content is None else None,
+            )
+        except DatabaseError as error:
+            status = 404 if str(error) == "Memory not found" else 422
+            raise HTTPException(status, str(error)) from error
+
+    @router.post("/memories/{memory_id}/approve")
+    async def approve_memory(memory_id: str) -> dict[str, Any]:
+        try:
+            return memories.approve(memory_id)
+        except DatabaseError as error:
+            status = 404 if str(error) == "Memory not found" else 409
+            raise HTTPException(status, str(error)) from error
+
+    @router.delete("/memories/{memory_id}")
+    async def delete_memory(memory_id: str) -> dict[str, bool]:
+        if not memories.delete(memory_id):
+            raise HTTPException(404, "Memory not found")
+        return {"deleted": True}
 
     @router.get("/requests/{request_id}")
     async def request_status(request_id: str) -> dict[str, Any]:

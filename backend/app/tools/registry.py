@@ -5,13 +5,16 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from backend.app.tools.adapters import FileAdapter, WindowsDesktopAdapter
 from backend.app.tools.models import ToolDescriptor, ToolError, ToolExecutionResult
+
+if TYPE_CHECKING:
+    from backend.app.memory.service import MemoryService
 
 Executor = Callable[[dict[str, Any]], Any]
 Details = Callable[[dict[str, Any]], dict[str, Any] | None]
@@ -91,6 +94,7 @@ def create_default_registry(
     timeout_seconds: float = 10,
     files: FileAdapter | None = None,
     desktop: WindowsDesktopAdapter | None = None,
+    memory: "MemoryService | None" = None,
 ) -> ToolRegistry:
     file_adapter = files or FileAdapter(shared_root)
     desktop_adapter = desktop or WindowsDesktopAdapter(file_adapter.root)
@@ -142,6 +146,40 @@ def create_default_registry(
         object_schema({"relative_path": {"type": "string", "minLength": 1, "maxLength": 260}}, ["relative_path"]),
         lambda args: file_adapter.read_text(args["relative_path"]), lambda args: f"\u8bfb\u53d6\u5171\u4eab\u6587\u4ef6\uff1a{Path(args['relative_path']).as_posix()}",
     )
+    if memory is not None:
+        def memory_call(action: Callable[[], Any]) -> Any:
+            try:
+                return action()
+            except Exception as error:
+                raise ToolError("MEMORY_OPERATION_INVALID", str(error)) from error
+
+        category = {"type": "string", "enum": ["profile", "preference", "instruction", "project"]}
+        add(
+            "memory.search", "Search approved long-term user memories by keyword. Pending memories are never returned.", "L0",
+            object_schema({"query": {"type": "string", "maxLength": 500}, "limit": {"type": "integer", "minimum": 1, "maximum": 20}}),
+            lambda args: memory.search(args.get("query", ""), args.get("limit", 10)), lambda _: "搜索已批准的长期记忆",
+        )
+        add(
+            "memory.remember", "Store one durable user fact or preference after exact user confirmation.", "L2",
+            object_schema({"content": {"type": "string", "minLength": 1, "maxLength": 500}, "category": category, "importance": {"type": "integer", "minimum": 1, "maximum": 5}}, ["content", "category"]),
+            lambda args: memory_call(lambda: memory.create(content=args["content"], category=args["category"], importance=args.get("importance", 3))),
+            lambda _: "保存一条长期记忆",
+            lambda args: {"target": "长期记忆", "operation": "remember", "content": args["content"], "content_length": len(args["content"]), "will_create_backup": False},
+        )
+        add(
+            "memory.update", "Replace one approved long-term memory after exact user confirmation.", "L2",
+            object_schema({"memory_id": {"type": "string", "minLength": 1, "maxLength": 64}, "content": {"type": "string", "minLength": 1, "maxLength": 500}, "category": category, "importance": {"type": "integer", "minimum": 1, "maximum": 5}}, ["memory_id", "content", "category"]),
+            lambda args: memory_call(lambda: memory.update(args["memory_id"], content=args["content"], category=args["category"], importance=args.get("importance", 3), pinned=memory.get(args["memory_id"])["pinned"])),
+            lambda _: "修改一条长期记忆",
+            lambda args: {"target": "长期记忆", "operation": "update", "content": args["content"], "content_length": len(args["content"]), "will_create_backup": False},
+        )
+        add(
+            "memory.forget", "Permanently delete one long-term memory after exact user confirmation.", "L2",
+            object_schema({"memory_id": {"type": "string", "minLength": 1, "maxLength": 64}}, ["memory_id"]),
+            lambda args: memory_call(lambda: memory.forget(args["memory_id"])), lambda _: "永久删除一条长期记忆",
+            lambda args: memory_call(lambda: {"target": "长期记忆", "operation": "forget", "content": memory.get(args["memory_id"])["content"], "content_length": len(memory.get(args["memory_id"])["content"]), "will_create_backup": False}),
+        )
+
     return registry
 
 
