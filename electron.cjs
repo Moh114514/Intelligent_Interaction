@@ -10,6 +10,9 @@ let mainWindow = null;
 let sidecarManager = null;
 let isQuitting = false;
 const isSmokeTest = process.argv.includes('--smoke-test');
+app.setAppUserModelId('com.garfield.chat');
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) app.quit();
 
 function writeMainLog(level, message) {
   const line = JSON.stringify({ timestamp: new Date().toISOString(), level, source: 'electron-main', message });
@@ -133,7 +136,7 @@ async function createWindow() {
     },
     autoHideMenuBar: true,
     resizable: true,
-    icon: path.join(__dirname, 'dist/favicon.ico')
+    icon: path.join(__dirname, 'dist/favicon.svg')
   });
   mainWindow = win;
   win.on('closed', () => {
@@ -159,9 +162,13 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (!singleInstanceLock) return;
   setupIpc();
+  const packagedSidecarDir = path.join(process.resourcesPath, 'backend-sidecar');
   sidecarManager = new SidecarManager({
-    rootDir: app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked') : __dirname,
+    rootDir: app.isPackaged ? packagedSidecarDir : __dirname,
+    executablePath: app.isPackaged ? path.join(packagedSidecarDir, 'agent-backend.exe') : null,
+    workingDirectory: app.isPackaged ? packagedSidecarDir : __dirname,
     logDir: path.join(app.getPath('userData'), 'logs', 'backend'),
     dataDir: path.join(app.getPath('userData'), 'data'),
     envFile: app.isPackaged
@@ -190,6 +197,11 @@ app.whenReady().then(async () => {
   });
 });
 
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+});
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();

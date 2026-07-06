@@ -1,5 +1,6 @@
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
+const fs = require('fs');
 const http = require('http');
 const net = require('net');
 const path = require('path');
@@ -67,6 +68,8 @@ class SidecarManager extends EventEmitter {
     this.logDir = options.logDir || path.join(this.rootDir, 'backend', 'logs');
     this.dataDir = options.dataDir || path.join(this.rootDir, 'backend', 'data');
     this.pythonCommand = options.pythonCommand || process.env.AGENT_PYTHON || 'python';
+    this.executablePath = options.executablePath || null;
+    this.workingDirectory = options.workingDirectory || this.rootDir;
     this.spawnImpl = options.spawnImpl || spawn;
     this.healthTimeoutMs = options.healthTimeoutMs || 15000;
     this.healthIntervalMs = options.healthIntervalMs || 200;
@@ -79,6 +82,26 @@ class SidecarManager extends EventEmitter {
     this.restartBudget = 1;
     this.lastStatus = { state: 'stopped', detail: 'Backend has not started' };
     this.lifecycleGeneration = 0;
+  }
+
+buildLaunch(port) {
+    if (this.executablePath) {
+      if (!fs.existsSync(this.executablePath)) {
+        const error = new Error(`缺少打包后端程序：${this.executablePath}`);
+        error.code = 'SIDECAR_BINARY_MISSING';
+        throw error;
+      }
+      return {
+        command: this.executablePath,
+        args: ['--host', '127.0.0.1', '--port', String(port)],
+        cwd: this.workingDirectory || path.dirname(this.executablePath)
+      };
+    }
+    return {
+      command: this.pythonCommand,
+      args: ['-m', 'backend.app.main', '--host', '127.0.0.1', '--port', String(port)],
+      cwd: this.rootDir
+    };
   }
 
   getConnection() {
@@ -146,10 +169,11 @@ class SidecarManager extends EventEmitter {
       AGENT_DATA_DIR: this.dataDir,
       ...(this.envFile ? { AGENT_ENV_FILE: this.envFile } : {})
     };
+    const launch = this.buildLaunch(port);
     const child = this.spawnImpl(
-      this.pythonCommand,
-      ['-m', 'backend.app.main', '--host', '127.0.0.1', '--port', String(port)],
-      { cwd: this.rootDir, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }
+      launch.command,
+      launch.args,
+      { cwd: launch.cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }
     );
     this.child = child;
     child.stdout?.on('data', (chunk) => this.log('info', chunk.toString().trim()));
