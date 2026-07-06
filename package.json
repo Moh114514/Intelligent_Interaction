@@ -1,6 +1,8 @@
 {
   "name": "garfield-chat-live",
   "private": true,
+  "description": "A secure Windows desktop AI companion with local tools, voice, 3D avatar, sessions and controlled memory.",
+  "author": "Moh114514",
   "version": "1.0.0",
   "type": "module",
   "main": "electron.cjs",
@@ -16,11 +18,12 @@
     "test:backend": "python -m pytest backend/tests -q",
     "test:sidecar": "node --test --test-isolation=none tests/sidecar.integration.test.mjs tests/sidecar.lifecycle.test.mjs",
     "smoke:electron": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-test.ps1",
+    "smoke:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-release.ps1",
     "verify:m1": "npm run verify && npm run test:backend && npm run test:sidecar",
     "verify": "npm run contracts:check && npm run typecheck && npm test && npm run build && npm run security:scan",
     "preview": "vite preview",
     "electron:dev": "set NODE_ENV=development&& electron .",
-    "electron:build": "npm run build && npm run clean:release && electron-builder && npm run security:scan-package",
+    "electron:build": "npm run release:build",
     "test:renderer": "vitest run tests/renderer",
     "verify:m4": "npm run verify:m3 && npm run test:avatar",
     "test:speech": "python -m pytest backend/tests/test_speech.py backend/tests/test_audio_api.py -q",
@@ -32,44 +35,56 @@
     "verify:m3": "npm run verify:m2",
     "clean:dist": "node scripts/clean-artifacts.mjs dist",
     "clean:release": "node scripts/clean-artifacts.mjs release",
-    "test:avatar": "node --test tests/avatar-assets.test.mjs"
+    "test:avatar": "node --test tests/avatar-assets.test.mjs",
+    "python:bootstrap": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-python312.ps1",
+    "sidecar:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
+    "sidecar:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-sidecar.ps1",
+    "electron:pack": "npm run build && npm run clean:release && electron-builder --win nsis portable --x64",
+    "release:verify": "npm run security:scan-package && npm run smoke:electron && npm run smoke:release && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-release-manifest.ps1",
+    "release:build": "npm run verify:m6-5 && npm run sidecar:build && npm run sidecar:smoke && npm run electron:pack && npm run release:verify",
+    "verify:v1": "npm run release:build && npm run sandbox:fixture && npm run sandbox:verify",
+    "sandbox:fixture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-upgrade-fixture.ps1",
+    "sandbox:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-windows-sandbox.ps1"
   },
   "build": {
     "appId": "com.garfield.chat",
     "productName": "Garfield Chat",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build-resources"
     },
     "files": [
       "dist/**/*",
       "electron.cjs",
       "apps/electron/**/*",
-      "backend/**/*",
-      "!backend/.env*",
-      "!backend/logs/**",
-      "!backend/data/**",
-      "!backend/tests/**",
-      "!backend/**/__pycache__/**",
-      "!backend/**/*.pyc",
-      "!backend/.pytest_cache/**",
       "package.json"
     ],
-    "asarUnpack": [
-      "backend/**/*.py"
+    "extraResources": [
+      {
+        "from": "build/backend-sidecar",
+        "to": "backend-sidecar",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
       "target": [
-        "nsis"
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
       ],
-      "icon": "dist/favicon.ico",
+      "icon": "icon.png",
       "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+      "createStartMenuShortcut": true,
+      "artifactName": "Garfield-Chat-${version}-win-${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "Garfield-Chat-${version}-win-${arch}-portable.${ext}"
+    },
+    "publish": null
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

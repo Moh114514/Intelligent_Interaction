@@ -95,3 +95,22 @@ test('stop cancels a launch while the spawned process is becoming healthy', asyn
   assert.equal(child.killed, true);
   assert.equal(manager.getStatus().state, 'stopped');
 });
+
+test('packaged launch uses only the bundled executable and never system Python', () => {
+  const executablePath = process.execPath;
+  const manager = new SidecarManager({
+    rootDir: 'C:\\resources',
+    executablePath,
+    workingDirectory: 'C:\\resources\\backend-sidecar'
+  });
+  const launch = manager.buildLaunch(54000);
+  assert.equal(launch.command, executablePath);
+  assert.deepEqual(launch.args, ['--host', '127.0.0.1', '--port', '54000']);
+  assert.equal(launch.cwd, 'C:\\resources\\backend-sidecar');
+  assert.ok(!launch.args.includes('-m'));
+});
+
+test('packaged launch fails clearly when the bundled executable is missing', () => {
+  const manager = new SidecarManager({ executablePath: 'Z:\\missing\\agent-backend.exe' });
+  assert.throws(() => manager.buildLaunch(55000), (error) => error.code === 'SIDECAR_BINARY_MISSING');
+});

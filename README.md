@@ -70,7 +70,7 @@ A WebSocket disconnect cancels the active request and marks it interrupted; requ
 - `npm run verify:m4`: complete M4 avatar and M3 regression suite
 - `npm run verify:m5`: complete Python speech, audio API, Renderer voice and M4 regression suite
 
-- npm run verify:m6: complete SQLite, multi-session, reconnect and M5 regression suite
+- `npm run verify:m6`: complete SQLite, multi-session, reconnect and M5 regression suite
 - `npm run electron:build`: Windows installer build
 - `npm run smoke:electron`: packaged startup and sidecar cleanup test
 
@@ -79,3 +79,12 @@ A WebSocket disconnect cancels the active request and marks it interrupted; requ
 Approved long-term memories are stored locally in SQLite and shared by all sessions and characters. Pending candidates never enter the Agent prompt until the user approves them in the memory panel. Explicit remember, update, and forget requests use L2 confirmation. Forgetting permanently deletes the row with SQLite secure deletion and a truncated WAL checkpoint.
 
 Automatic extraction is heuristic-gated, runs after a successful visible exchange, reuses the configured LLM provider, and never blocks chat. Credentials, tokens, payment data, government identifiers, file contents, and tool output are excluded. Run `npm run verify:m6-5` for the complete acceptance suite.
+## Windows V1.0 release
+
+`npm run release:build` runs the complete M6.5 regression suite, builds the self-contained Python 3.12/PyInstaller sidecar, creates the x64 NSIS installer and portable executable, scans package contents, runs packaged smoke tests, and writes SHA-256 metadata. `npm run verify:v1` additionally builds the 0.9.0 upgrade fixture and starts Windows Sandbox acceptance.
+
+Packaged builds never invoke a system Python installation. Both installer and portable modes use `%APPDATA%\Garfield Chat` for `backend.env`, SQLite data, settings, and logs. Upgrade and normal uninstall preserve this directory. To remove all local data after uninstall, manually delete `%APPDATA%\Garfield Chat` only after backing up anything needed.
+
+The V1.0 files are intentionally unsigned. Windows SmartScreen or an organization Application Control policy may warn or block them. Verify `SHA256SUMS.txt` before running. Code signing is required for environments that prohibit unsigned executables; do not weaken a managed security policy to install this build.
+
+Expected artifacts are `Garfield-Chat-1.0.0-win-x64-setup.exe`, `Garfield-Chat-1.0.0-win-x64-portable.exe`, `SHA256SUMS.txt`, and `release-manifest.json`. No tag, upload, auto-update, or GitHub Release is created automatically.

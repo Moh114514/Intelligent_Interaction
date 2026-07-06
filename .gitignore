@@ -35,3 +35,6 @@ backend/data/
 *.njsproj
 *.sln
 *.sw?
+/.build/
+/build/backend-sidecar/
+/build/pyinstaller-work/
