@@ -12,10 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from backend.app import __version__
 from backend.app.agent.runtime import AgentRuntime, ConfirmationDecision
+from backend.app.agent.text import strip_role_prefix
 from backend.app.api.auth import require_http_token, websocket_is_authorized
 from backend.app.core.config import Settings
 from backend.app.providers import ProviderError
 from backend.app.tools.models import ToolCall
+from backend.app.memory import SQLiteStore
 
 
 class EventEnvelope(BaseModel):
@@ -34,6 +36,7 @@ class ClientMessageData(BaseModel):
 
     content: str = Field(min_length=1)
     character_id: str = Field(pattern=r"^(BLACK|WHITE|SOLDIER)$")
+    interaction_type: str = Field(default="message", pattern=r"^(message|greeting|feed|sing)$")
 
 
 class ToolConfirmationResponseData(BaseModel):
@@ -78,7 +81,7 @@ def error_payload(*, session_id: str, request_id: str, error_code: str, message:
     )
 
 
-def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
+def create_router(settings: Settings, agent_runtime: AgentRuntime, store: SQLiteStore) -> APIRouter:
     router = APIRouter()
     protected = [Depends(require_http_token(settings))]
 
@@ -99,6 +102,7 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
         await websocket.accept(subprotocol="agent.v1")
         send_lock = asyncio.Lock()
         active_requests: dict[str, asyncio.Task[None]] = {}
+        disconnecting_requests: set[str] = set()
         pending_confirmations: dict[str, PendingConfirmation] = {}
 
         async def send(payload: dict[str, Any]) -> bool:
@@ -121,6 +125,7 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
                 future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
                 pending_confirmations[incoming.request_id] = PendingConfirmation(confirmation_id, future)
                 expires_at = datetime.now(timezone.utc) + timedelta(seconds=settings.tool_confirmation_timeout_seconds)
+                store.set_request_status(incoming.request_id, "confirming")
                 await send_event(incoming, "agent.state", {"state": "confirming"})
                 await send_event(
                     incoming,
@@ -142,6 +147,7 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
                 finally:
                     pending_confirmations.pop(incoming.request_id, None)
                 if approved:
+                    store.set_request_status(incoming.request_id, "running")
                     await send_event(incoming, "agent.state", {"state": "acting"})
                     return "approved"
                 return "denied"
@@ -149,6 +155,7 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
             try:
                 await send_event(incoming, "agent.state", {"state": "thinking"})
                 chunks: list[str] = []
+                sent_content = ""
                 async for output in agent_runtime.stream_response(
                     session_id=incoming.session_id,
                     request_id=incoming.request_id,
@@ -157,23 +164,34 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
                     confirm_tool=confirm_tool,
                 ):
                     if output.kind == "delta":
-                        delta = str(output.data["delta"])
-                        chunks.append(delta)
-                        if not await send_event(incoming, "assistant.delta", {"delta": delta}):
-                            return
+                        chunks.append(str(output.data["delta"]))
+                        cleaned = strip_role_prefix("".join(chunks), final=False)
+                        delta = cleaned[len(sent_content):]
+                        if delta:
+                            sent_content = cleaned
+                            if not await send_event(incoming, "assistant.delta", {"delta": delta}):
+                                return
                     elif output.kind == "state":
                         await send_event(incoming, "agent.state", output.data)
                     elif output.kind == "tool_result":
                         await send_event(incoming, "tool.result", output.data)
-                await send_event(incoming, "assistant.message", {"content": "".join(chunks).strip()})
+                final_content = strip_role_prefix("".join(chunks), final=True).strip()
+                store.complete_request(incoming.request_id, message.content.strip(), final_content)
+                await send_event(incoming, "assistant.message", {"content": final_content})
             except asyncio.CancelledError:
+                if incoming.request_id in disconnecting_requests:
+                    store.set_request_status(incoming.request_id, "interrupted", "BACKEND_DISCONNECTED")
+                else:
+                    store.set_request_status(incoming.request_id, "cancelled", "REQUEST_CANCELLED")
                 pending = pending_confirmations.pop(incoming.request_id, None)
                 if pending and not pending.future.done():
                     pending.future.cancel()
                 await send_event(incoming, "request.cancelled", {})
             except ProviderError as error:
+                store.set_request_status(incoming.request_id, "failed", error.error_code)
                 await send_error(incoming, error.error_code, error.message, error.recoverable)
             except Exception:
+                store.set_request_status(incoming.request_id, "failed", "AGENT_UNAVAILABLE")
                 await send_error(incoming, "AGENT_UNAVAILABLE", "The agent could not complete the request", True)
             finally:
                 await send_event(incoming, "agent.state", {"state": "idle"})
@@ -229,12 +247,28 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
                     await send_error(incoming, "INVALID_EVENT", "Invalid client.message data", True)
                     continue
 
+                existing = store.get_request(incoming.request_id)
+                if existing:
+                    if existing["session_id"] != incoming.session_id:
+                        await send_error(incoming, "REQUEST_ID_CONFLICT", "request_id belongs to another session", False)
+                    elif existing["status"] == "completed" and existing.get("assistant_content"):
+                        await send_event(incoming, "assistant.message", {"content": existing["assistant_content"]})
+                        await send_event(incoming, "agent.state", {"state": "idle"})
+                    else:
+                        await send_error(incoming, "REQUEST_ALREADY_EXISTS", f"Request is already {existing['status']}", True)
+                    continue
+
+                store.begin_request(incoming.request_id, incoming.session_id, message.character_id, message.interaction_type)
                 task = asyncio.create_task(run_agent(incoming, message))
                 active_requests[incoming.request_id] = task
                 task.add_done_callback(lambda _completed, request_id=incoming.request_id: active_requests.pop(request_id, None))
         except WebSocketDisconnect:
             pass
         finally:
+            interrupted_ids = [request_id for request_id, task in active_requests.items() if not task.done()]
+            disconnecting_requests.update(interrupted_ids)
+            for request_id in interrupted_ids:
+                store.set_request_status(request_id, "interrupted", "BACKEND_DISCONNECTED")
             tasks = list(active_requests.values())
             for task in tasks:
                 task.cancel()
@@ -243,5 +277,7 @@ def create_router(settings: Settings, agent_runtime: AgentRuntime) -> APIRouter:
                     pending.future.cancel()
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
+            for request_id in interrupted_ids:
+                store.set_request_status(request_id, "interrupted", "BACKEND_DISCONNECTED")
 
     return router

@@ -24,7 +24,8 @@
       "required": ["content", "character_id"],
       "properties": {
         "content": { "type": "string", "minLength": 1 },
-        "character_id": { "$ref": "#/$defs/characterId" }
+        "character_id": { "$ref": "#/$defs/characterId" },
+        "interaction_type": { "type": "string", "enum": ["message", "greeting", "feed", "sing"], "default": "message" }
       }
     },
     "agentStateData": {

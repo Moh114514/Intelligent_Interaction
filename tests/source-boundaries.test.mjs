@@ -37,4 +37,12 @@ test('Electron preload exposes only the approved capability surface', async () =
   assert.deepEqual(names, ['getAppVersion', 'getBackendConnection', 'onBackendStatus', 'openFileDialog', 'showNotification']);
   const main = await read('electron.cjs');
   assert.match(main, /nodeIntegration:\s*false/); assert.match(main, /contextIsolation:\s*true/); assert.match(main, /sandbox:\s*true/);
+  assert.doesNotMatch(main, /runtime-config|sparkTTSVcn|xunfei/i);
+});
+
+test('SQLite persistence excludes credentials and content-bearing tool fields', async () => {
+  const sources = await Promise.all(['backend/app/memory/database.py', 'backend/app/api/memory_routes.py'].map(read));
+  const joined = sources.join(String.fromCharCode(10));
+  assert.doesNotMatch(joined, /llm_api_key|volcengine_speech_api_key|xunfei_api_secret/i);
+  assert.doesNotMatch(joined, /clipboard_content|file_content|audio_bytes/i);
 });

@@ -28,3 +28,10 @@ def test_prompt_does_not_mention_unregistered_tools() -> None:
     assert "system_info" in prompt
     assert "files_search_names" not in prompt
     assert "clipboard_write_text" not in prompt
+
+def test_create_tool_allows_confirmed_relative_shared_path_without_role_prefixes() -> None:
+    prompt = compose_system_prompt("SOLDIER", [tool("files_create_text")])
+    assert "relative filename" in prompt
+    assert "Garfield Chat Shared" in prompt
+    assert "do not ask for an absolute path" in prompt
+    assert "Never prefix the final answer" in prompt

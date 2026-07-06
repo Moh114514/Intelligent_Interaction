@@ -83,7 +83,7 @@ describe('AgentClient', () => {
 
     const socket = FakeWebSocket.instances[0];
     expect(socket.sent[0].type).toBe('client.message');
-    expect(socket.sent[0].data).toEqual({ content: 'Hello', character_id: 'BLACK' });
+    expect(socket.sent[0].data).toEqual({ content: 'Hello', character_id: 'BLACK', interaction_type: 'message' });
 
     socket.receive(response('assistant.delta', request.requestId, { delta: 'Hi' }));
     socket.receive(response('assistant.delta', request.requestId, { delta: '!' }));
@@ -170,6 +170,7 @@ describe('AgentClient', () => {
       recoverable: true
     } satisfies Partial<AgentClientError>));
 
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'interrupted', error_code: 'BACKEND_DISCONNECTED' }), { status: 200 })));
     const disconnected = client.sendMessage('session-1', CatType.BLACK, 'Again');
     await vi.waitFor(() => expect(FakeWebSocket.instances[0].sent).toHaveLength(2));
     FakeWebSocket.instances[0].close();

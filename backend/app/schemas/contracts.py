@@ -43,6 +43,7 @@ class ToolRiskLevel(str, Enum):
 class ClientMessageData(BaseModel):
     content: str = Field(min_length=1)
     character_id: CharacterId
+    interaction_type: str = Field(default="message", pattern=r"^(message|greeting|feed|sing)$")
 
 class AgentStateData(BaseModel):
     state: AgentState

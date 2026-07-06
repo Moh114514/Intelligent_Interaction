@@ -1,40 +1,17 @@
 import { v4 as uuidv4 } from 'uuid';
 import { CatType, ChatMessage } from '../../types';
 
-export type MessageHistory = Record<CatType, ChatMessage[]>;
-
-export const createMessageHistory = (): MessageHistory => ({
-  [CatType.BLACK]: [],
-  [CatType.WHITE]: [],
-  [CatType.SOLDIER]: []
-});
-
-export function appendMessage(
-  history: MessageHistory,
-  catType: CatType,
-  role: ChatMessage['role'],
-  text: string
-): MessageHistory {
-  return {
-    ...history,
-    [catType]: [...history[catType], { id: uuidv4(), role, text }]
-  };
+export type MessageHistory = ChatMessage[];
+export const createMessageHistory = (): MessageHistory => [];
+export function appendMessage(history: MessageHistory, catType: CatType, role: ChatMessage['role'], text: string): MessageHistory {
+  return [...history, { id: uuidv4(), role, text, characterId: catType }];
 }
-
-export function upsertModelMessage(
-  history: MessageHistory,
-  catType: CatType,
-  id: string,
-  text: string
-): MessageHistory {
-  const messages = history[catType];
-  const index = messages.findIndex((message) => message.id === id);
-  const next = index < 0
-    ? [...messages, { id, role: 'model' as const, text }]
-    : messages.map((message, messageIndex) => messageIndex === index ? { ...message, text } : message);
-  return { ...history, [catType]: next };
+export function upsertModelMessage(history: MessageHistory, catType: CatType, id: string, text: string): MessageHistory {
+  const index = history.findIndex((message) => message.id === id);
+  return index < 0
+    ? [...history, { id, role: 'model', text, characterId: catType }]
+    : history.map((message, messageIndex) => messageIndex === index ? { ...message, text, characterId: catType } : message);
 }
-
-export function removeMessage(history: MessageHistory, catType: CatType, id: string): MessageHistory {
-  return { ...history, [catType]: history[catType].filter((message) => message.id !== id) };
+export function removeMessage(history: MessageHistory, _catType: CatType, id: string): MessageHistory {
+  return history.filter((message) => message.id !== id);
 }

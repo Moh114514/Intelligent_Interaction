@@ -12,6 +12,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from backend.app.agent.prompts import PERSONAS, compose_system_prompt
+from backend.app.agent.text import strip_role_prefix
 from backend.app.providers.base import ChatMessage, LLMProvider, ProviderError, ToolCallBatch
 from backend.app.tools.audit import write_audit
 from backend.app.tools.models import ToolCall, ToolError, ToolExecutionResult
@@ -43,14 +44,15 @@ class AgentRuntime:
         self,
         provider: LLMProvider,
         registry: ToolRegistry,
-        audit_logger: logging.Logger,
+        audit_target: Any,
         *,
         max_history_messages: int = 20,
         max_tool_steps: int = 5,
     ) -> None:
         self.provider = provider
         self.registry = registry
-        self.audit_logger = audit_logger
+        self.audit_target = audit_target
+        self.history_store = audit_target if hasattr(audit_target, "load_context") else None
         self.max_history_messages = max(2, max_history_messages)
         self.max_tool_steps = max(1, max_tool_steps)
         self._history: dict[tuple[str, str], list[ChatMessage]] = defaultdict(list)
@@ -71,7 +73,16 @@ class AgentRuntime:
             raise ProviderError("INVALID_MESSAGE", "Message content cannot be empty", True)
 
         key = (session_id, character_id)
-        prior = [message.copy() for message in self._history[key]]
+        if self.history_store is not None:
+            prior = [
+                {
+                    "role": item["role"],
+                    "content": strip_role_prefix(item["content"]) if item["role"] == "assistant" else item["content"],
+                }
+                for item in self.history_store.load_context(session_id, self.max_history_messages)
+            ]
+        else:
+            prior = [message.copy() for message in self._history[key]]
         working: list[ChatMessage] = [*prior, {"role": "user", "content": normalized}]
         tool_steps = 0
 
@@ -150,7 +161,8 @@ class AgentRuntime:
                 if not assistant_text:
                     raise ProviderError("PROVIDER_RESPONSE_INVALID", "The LLM provider returned no response text", True)
                 working.append({"role": "assistant", "content": assistant_text})
-                self._history[key] = [message.copy() for message in working[-self.max_history_messages :]]
+                if self.history_store is None:
+                    self._history[key] = [message.copy() for message in working[-self.max_history_messages :]]
                 return
 
             assistant_message = batch.assistant_message.copy()
@@ -247,9 +259,7 @@ class AgentRuntime:
         safe_summary: str,
         confirmation_result: str | None,
     ) -> None:
-        write_audit(
-            self.audit_logger,
-            {
+        payload = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "session_id": session_id,
                 "request_id": request_id,
@@ -262,8 +272,13 @@ class AgentRuntime:
                 "argument_keys": sorted(call.arguments),
                 "error_code": result.error_code,
                 "confirmation_result": confirmation_result,
-            },
-        )
+            }
+        if hasattr(self.audit_target, "write_audit"):
+            self.audit_target.write_audit(payload)
+        else:
+            write_audit(self.audit_target, payload)
 
     def get_history(self, session_id: str, character_id: str) -> list[ChatMessage]:
+        if self.history_store is not None:
+            return [{"role": row["role"], "content": row["content"]} for row in self.history_store.load_context(session_id, self.max_history_messages)]
         return [message.copy() for message in self._history[(session_id, character_id)]]

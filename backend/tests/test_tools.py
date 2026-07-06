@@ -96,6 +96,12 @@ def test_create_and_replace_are_atomic_and_replacement_creates_backup(tmp_path: 
     target = tmp_path / "created.txt"
     files.create_text(str(target), "first")
     assert target.read_text(encoding="utf-8") == "first"
+
+    files.create_text("shared-note.txt", "shared")
+    assert (files.root / "shared-note.txt").read_text(encoding="utf-8") == "shared"
+    with pytest.raises(ToolError) as traversal:
+        files.create_text("../escaped.txt", "blocked")
+    assert traversal.value.error_code == "TOOL_PATH_FORBIDDEN"
     with pytest.raises(ToolError) as caught:
         files.create_text(str(target), "overwrite")
     assert caught.value.error_code == "TOOL_FILE_EXISTS"

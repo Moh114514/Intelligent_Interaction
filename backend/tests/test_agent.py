@@ -27,6 +27,16 @@ class RecordingProvider(LLMProvider):
         yield " there"
 
 
+class PrefixProvider(LLMProvider):
+    async def stream_chat(
+        self,
+        *,
+        messages: Sequence[ChatMessage],
+        system_prompt: str,
+    ) -> AsyncIterator[str]:
+        yield "[Van"
+        yield "guard][Vanguard] Ready"
+
 class SlowProvider(LLMProvider):
     async def stream_chat(
         self,
@@ -66,7 +76,7 @@ def receive_turn(websocket) -> list[dict[str, Any]]:
     return [websocket.receive_json() for _ in range(5)]
 
 
-def test_streaming_multiturn_history_and_character_isolation(tmp_path: Path) -> None:
+def test_streaming_multiturn_history_and_cross_character_context(tmp_path: Path) -> None:
     provider = RecordingProvider()
     app = create_app(settings(tmp_path), provider=provider)
     with TestClient(app) as client:
@@ -92,15 +102,31 @@ def test_streaming_multiturn_history_and_character_isolation(tmp_path: Path) -> 
 
             websocket.send_json(event("client.message", "request-3", data={"content": "White", "character_id": "WHITE"}))
             receive_turn(websocket)
-            assert [message["content"] for message in provider.calls[2][0]] == ["White"]
+            white_messages = provider.calls[2][0]
+            assert white_messages[-1]["content"] == "White"
+            assert "Hello there" in [message["content"] for message in white_messages]
             assert provider.calls[0][1] != provider.calls[2][1]
 
             websocket.send_json(event("client.message", "request-4", data={"content": "Report", "character_id": "SOLDIER"}))
             receive_turn(websocket)
-            assert [message["content"] for message in provider.calls[3][0]] == ["Report"]
+            soldier_messages = provider.calls[3][0]
+            assert soldier_messages[-1]["content"] == "Report"
+            assert "Hello there" in [message["content"] for message in soldier_messages]
             assert "Vanguard" in provider.calls[3][1]
             assert provider.calls[3][1] not in {provider.calls[0][1], provider.calls[2][1]}
 
+
+def test_streaming_and_final_response_remove_role_prefix(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path), provider=PrefixProvider())
+    with TestClient(app) as client:
+        with connect(client) as websocket:
+            websocket.send_json(event("client.message", "prefix-request", data={"content": "Hello", "character_id": "SOLDIER"}))
+            received = [websocket.receive_json() for _ in range(4)]
+        assert [item["type"] for item in received] == ["agent.state", "assistant.delta", "assistant.message", "agent.state"]
+        assert received[1]["data"]["delta"] == "Ready"
+        assert received[2]["data"]["content"] == "Ready"
+        status = client.get("/api/v1/requests/prefix-request", headers={"Authorization": "Bearer " + "a" * 64}).json()
+        assert status["assistant_content"] == "Ready"
 
 def test_request_cancel_and_busy_error(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path), provider=SlowProvider())

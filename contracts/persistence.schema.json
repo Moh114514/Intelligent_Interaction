@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intelligent-interaction.local/contracts/persistence.schema.json",
+  "title": "Persistence API",
+  "$defs": {
+    "session": {"type":"object","required":["id","title","summary","archived","created_at","updated_at"],"properties":{"id":{"type":"string"},"title":{"type":"string"},"summary":{"type":"string"},"archived":{"type":"boolean"},"archived_at":{"type":["string","null"]},"created_at":{"type":"string"},"updated_at":{"type":"string"}}},
+    "message": {"type":"object","required":["id","request_id","role","character_id","content","created_at"],"properties":{"id":{"type":"string"},"request_id":{"type":"string"},"role":{"enum":["user","assistant"]},"character_id":{"enum":["BLACK","WHITE","SOLDIER"]},"content":{"type":"string"},"created_at":{"type":"string"}}},
+    "config": {"type":"object","required":["active_session_id","avatar_mode","css_character","volume"],"properties":{"active_session_id":{"type":["string","null"]},"avatar_mode":{"enum":["three","css"]},"css_character":{"enum":["BLACK","WHITE"]},"volume":{"type":"number","minimum":0,"maximum":1}}},
+    "request": {"type":"object","required":["request_id","session_id","character_id","status"],"properties":{"request_id":{"type":"string"},"session_id":{"type":"string"},"character_id":{"enum":["BLACK","WHITE","SOLDIER"]},"status":{"enum":["running","confirming","completed","cancelled","failed","interrupted"]},"error_code":{"type":["string","null"]},"assistant_content":{"type":["string","null"]}}}
+  }
+}
