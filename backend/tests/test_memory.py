@@ -40,7 +40,7 @@ def test_diagnostic_log_sanitization() -> None:
 def test_database_initialization_crud_and_restart_recovery(tmp_path: Path) -> None:
     store = SQLiteStore(tmp_path)
     store.initialize()
-    assert store.schema_version == 1
+    assert store.schema_version == 2
     session = store.create_session("s1")
     assert session["title"] == "新会话"
     store.begin_request("r1", "s1", "BLACK", "message")

@@ -26,6 +26,8 @@
     "test:speech": "python -m pytest backend/tests/test_speech.py backend/tests/test_audio_api.py -q",
     "verify:m5": "npm run verify:m4 && npm run test:speech",
     "verify:m6": "npm run verify:m5 && python -m pytest backend/tests/test_memory.py -q && npm run test:renderer && npm run test:sidecar",
+    "test:memory": "python -m pytest backend/tests/test_long_term_memory.py -q",
+    "verify:m6-5": "npm run verify:m6 && npm run test:memory && npm run test:renderer",
     "verify:m2": "npm run verify:m1 && npm run test:renderer",
     "verify:m3": "npm run verify:m2",
     "clean:dist": "node scripts/clean-artifacts.mjs dist",

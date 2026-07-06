@@ -16,3 +16,7 @@ Current boundaries:
 React owns visual state and Three.js only renders presentation. The 3D renderer never connects to Python, stores business state or executes tools. CSS and 3D are explicit peer modes; a 3D load failure remains isolated from conversation, tool and speech flows and never changes mode automatically.
 
 The SOLDIER identity is selected in 3D mode. BLACK, WHITE and SOLDIER retain independent personas while sharing the selected session context; each assistant message stores its actual speaker.
+
+### Long-term memory boundary
+
+SQLite schema v2 adds global `pending` and `active` memories. Only active memories are locally ranked and injected into the current system prompt as untrusted user data. Pending extraction is asynchronous and reads only the visible user message. Memory REST endpoints remain behind the Sidecar bearer token; memory writes requested by the model use the existing L2 confirmation path. Permanent deletion uses `secure_delete` and truncates the WAL.

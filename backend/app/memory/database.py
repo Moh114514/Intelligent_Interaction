@@ -1,21 +1,25 @@
 from __future__ import annotations
+
 import json
+import logging
 import shutil
 import sqlite3
 import threading
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
 
 class DatabaseError(RuntimeError):
     pass
 
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
 
 class SQLiteStore:
     def __init__(self, data_dir: Path, legacy_audit_logger: logging.Logger | None = None) -> None:
@@ -29,6 +33,7 @@ class SQLiteStore:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA busy_timeout=5000")
         connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA secure_delete=ON")
         return connection
 
     def initialize(self) -> None:
@@ -41,49 +46,79 @@ class SQLiteStore:
             if current > SCHEMA_VERSION:
                 raise DatabaseError(f"Database schema {current} is newer than supported {SCHEMA_VERSION}")
             if current and current < SCHEMA_VERSION:
+                connection.execute("PRAGMA wal_checkpoint(FULL)")
                 shutil.copy2(self.path, self.path.with_suffix(f".v{current}.bak"))
             if current < 1:
-                try:
-                    connection.executescript("""
-                    BEGIN IMMEDIATE;
-                    CREATE TABLE schema_version(version INTEGER NOT NULL, applied_at TEXT NOT NULL);
-                    CREATE TABLE sessions(
-                      id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '新会话', summary TEXT NOT NULL DEFAULT '',
-                      archived_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-                    );
-                    CREATE TABLE requests(
-                      id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), character_id TEXT NOT NULL,
-                      interaction_type TEXT NOT NULL, status TEXT NOT NULL, error_code TEXT,
-                      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-                    );
-                    CREATE TABLE messages(
-                      id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), request_id TEXT NOT NULL REFERENCES requests(id),
-                      role TEXT NOT NULL, character_id TEXT NOT NULL, content TEXT NOT NULL, visible INTEGER NOT NULL,
-                      created_at TEXT NOT NULL
-                    );
-                    CREATE INDEX messages_session_idx ON messages(session_id, created_at);
-                    CREATE TABLE settings(key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL);
-                    CREATE TABLE tool_audits(
-                      id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, session_id TEXT NOT NULL,
-                      request_id TEXT NOT NULL, tool_call_id TEXT NOT NULL, tool_name TEXT NOT NULL,
-                      risk_level TEXT NOT NULL, status TEXT NOT NULL, duration_ms REAL NOT NULL,
-                      resource TEXT NOT NULL, argument_keys TEXT NOT NULL, error_code TEXT, confirmation_result TEXT
-                    );
-                    CREATE INDEX audit_request_idx ON tool_audits(request_id, timestamp);
-                    INSERT INTO schema_version(version, applied_at) VALUES(1, CURRENT_TIMESTAMP);
-                    PRAGMA user_version=1;
-                    COMMIT;
-                    """)
-                except Exception as error:
-                    try:
-                        connection.execute("ROLLBACK")
-                    except sqlite3.Error:
-                        pass
-                    raise DatabaseError(f"Database migration failed: {error}") from error
+                self._migrate_v1(connection)
+                current = 1
+            if current < 2:
+                self._migrate_v2(connection)
             connection.execute(
                 "UPDATE requests SET status='interrupted', error_code='BACKEND_RESTARTED', updated_at=? "
                 "WHERE status IN ('running','confirming')", (utc_now(),)
             )
+
+    @staticmethod
+    def _run_migration(connection: sqlite3.Connection, sql: str, version: int) -> None:
+        try:
+            connection.executescript("BEGIN IMMEDIATE;\n" + sql + f"\nPRAGMA user_version={version};\nCOMMIT;")
+        except Exception as error:
+            try:
+                connection.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+            raise DatabaseError(f"Database migration failed: {error}") from error
+
+    def _migrate_v1(self, connection: sqlite3.Connection) -> None:
+        self._run_migration(connection, """
+        CREATE TABLE schema_version(version INTEGER NOT NULL, applied_at TEXT NOT NULL);
+        CREATE TABLE sessions(
+          id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '新会话', summary TEXT NOT NULL DEFAULT '',
+          archived_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE requests(
+          id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), character_id TEXT NOT NULL,
+          interaction_type TEXT NOT NULL, status TEXT NOT NULL, error_code TEXT,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE messages(
+          id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), request_id TEXT NOT NULL REFERENCES requests(id),
+          role TEXT NOT NULL, character_id TEXT NOT NULL, content TEXT NOT NULL, visible INTEGER NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX messages_session_idx ON messages(session_id, created_at);
+        CREATE TABLE settings(key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE tool_audits(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, session_id TEXT NOT NULL,
+          request_id TEXT NOT NULL, tool_call_id TEXT NOT NULL, tool_name TEXT NOT NULL,
+          risk_level TEXT NOT NULL, status TEXT NOT NULL, duration_ms REAL NOT NULL,
+          resource TEXT NOT NULL, argument_keys TEXT NOT NULL, error_code TEXT, confirmation_result TEXT
+        );
+        CREATE INDEX audit_request_idx ON tool_audits(request_id, timestamp);
+        INSERT INTO schema_version(version, applied_at) VALUES(1, CURRENT_TIMESTAMP);
+        """, 1)
+
+    def _migrate_v2(self, connection: sqlite3.Connection) -> None:
+        self._run_migration(connection, """
+        CREATE TABLE memories(
+          id TEXT PRIMARY KEY,
+          status TEXT NOT NULL CHECK(status IN ('pending','active')),
+          category TEXT NOT NULL CHECK(category IN ('profile','preference','instruction','project')),
+          content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 500),
+          fingerprint TEXT NOT NULL,
+          keywords_json TEXT NOT NULL DEFAULT '[]',
+          importance INTEGER NOT NULL DEFAULT 3 CHECK(importance BETWEEN 1 AND 5),
+          pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0,1)),
+          source_session_id TEXT REFERENCES sessions(id),
+          source_request_id TEXT REFERENCES requests(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          last_used_at TEXT
+        );
+        CREATE UNIQUE INDEX memories_status_fingerprint_idx ON memories(status, fingerprint);
+        CREATE INDEX memories_recall_idx ON memories(status, pinned, importance, updated_at);
+        INSERT INTO schema_version(version, applied_at) VALUES(2, CURRENT_TIMESTAMP);
+        """, 2)
 
     @property
     def schema_version(self) -> int:
@@ -207,6 +242,113 @@ class SQLiteStore:
                 )
             connection.execute("COMMIT")
         return self.get_settings()
+
+    def count_memories(self, status: str) -> int:
+        with self.connect() as connection:
+            return int(connection.execute("SELECT COUNT(*) FROM memories WHERE status=?", (status,)).fetchone()[0])
+
+    def get_memory(self, memory_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
+        return dict(row) if row else None
+
+    def find_memory(self, status: str, fingerprint: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute("SELECT * FROM memories WHERE status=? AND fingerprint=?", (status, fingerprint)).fetchone()
+        return dict(row) if row else None
+
+    def list_memories(self, status: str, *, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM memories WHERE status=? ORDER BY pinned DESC, importance DESC, updated_at DESC LIMIT ? OFFSET ?",
+                (status, limit, offset),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def create_memory(
+        self, *, status: str, category: str, content: str, fingerprint: str, keywords: list[str],
+        importance: int = 3, pinned: bool = False, source_session_id: str | None = None,
+        source_request_id: str | None = None,
+    ) -> dict[str, Any]:
+        existing = self.find_memory("active", fingerprint) or self.find_memory(status, fingerprint)
+        if existing:
+            return existing
+        now, memory_id = utc_now(), str(uuid4())
+        try:
+            with self.connect() as connection:
+                connection.execute(
+                    "INSERT INTO memories(id,status,category,content,fingerprint,keywords_json,importance,pinned,source_session_id,source_request_id,created_at,updated_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (memory_id, status, category, content, fingerprint, json.dumps(keywords, ensure_ascii=False), importance,
+                     int(pinned), source_session_id, source_request_id, now, now),
+                )
+        except sqlite3.IntegrityError:
+            existing = self.find_memory("active", fingerprint) or self.find_memory(status, fingerprint)
+            if existing:
+                return existing
+            raise
+        return self.get_memory(memory_id) or {}
+
+    def update_memory(
+        self, memory_id: str, *, content: str, category: str, fingerprint: str,
+        keywords: list[str], importance: int, pinned: bool,
+    ) -> dict[str, Any] | None:
+        existing = self.get_memory(memory_id)
+        if not existing:
+            return None
+        collision = self.find_memory(existing["status"], fingerprint)
+        if collision and collision["id"] != memory_id:
+            raise DatabaseError("Duplicate memory")
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE memories SET content=?,category=?,fingerprint=?,keywords_json=?,importance=?,pinned=?,updated_at=? WHERE id=?",
+                (content, category, fingerprint, json.dumps(keywords, ensure_ascii=False), importance, int(pinned), utc_now(), memory_id),
+            )
+        return self.get_memory(memory_id)
+
+    def approve_memory(self, memory_id: str) -> dict[str, Any] | None:
+        with self._lock, self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
+            if not row:
+                connection.execute("ROLLBACK")
+                return None
+            if row["status"] == "active":
+                connection.execute("COMMIT")
+                return dict(row)
+            existing = connection.execute(
+                "SELECT * FROM memories WHERE status='active' AND fingerprint=?", (row["fingerprint"],)
+            ).fetchone()
+            if existing:
+                connection.execute("DELETE FROM memories WHERE id=?", (memory_id,))
+                connection.execute("COMMIT")
+                return dict(existing)
+            connection.execute("UPDATE memories SET status='active',updated_at=? WHERE id=?", (utc_now(), memory_id))
+            connection.execute("COMMIT")
+        return self.get_memory(memory_id)
+
+    def delete_memory(self, memory_id: str) -> bool:
+        with self._lock, self.connect() as connection:
+            cursor = connection.execute("DELETE FROM memories WHERE id=?", (memory_id,))
+            deleted = cursor.rowcount > 0
+        if deleted:
+            with self.connect() as connection:
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return deleted
+
+    def active_memories(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM memories WHERE status='active' ORDER BY pinned DESC,importance DESC,updated_at DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def touch_memories(self, memory_ids: list[str]) -> None:
+        if not memory_ids:
+            return
+        placeholders = ",".join("?" for _ in memory_ids)
+        with self.connect() as connection:
+            connection.execute(f"UPDATE memories SET last_used_at=? WHERE id IN ({placeholders})", [utc_now(), *memory_ids])
 
     def write_audit(self, payload: dict[str, Any]) -> None:
         if self.legacy_audit_logger is not None:

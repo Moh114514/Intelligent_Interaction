@@ -62,7 +62,7 @@
           "additionalProperties": false,
           "properties": {
             "target": { "type": "string" },
-            "operation": { "type": "string", "enum": ["search", "read", "create", "replace", "clipboard"] },
+            "operation": { "type": "string", "enum": ["search", "read", "create", "replace", "clipboard", "remember", "update", "forget"] },
             "content": { "type": ["string", "null"] },
             "content_length": { "type": ["integer", "null"], "minimum": 0 },
             "will_create_backup": { "type": "boolean" }

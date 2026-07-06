@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from backend.app.agent.prompts import PERSONAS, compose_system_prompt
 from backend.app.agent.text import strip_role_prefix
+from backend.app.memory import MemoryService
 from backend.app.providers.base import ChatMessage, LLMProvider, ProviderError, ToolCallBatch
 from backend.app.tools.audit import write_audit
 from backend.app.tools.models import ToolCall, ToolError, ToolExecutionResult
@@ -48,6 +49,7 @@ class AgentRuntime:
         *,
         max_history_messages: int = 20,
         max_tool_steps: int = 5,
+        memory_service: MemoryService | None = None,
     ) -> None:
         self.provider = provider
         self.registry = registry
@@ -55,6 +57,7 @@ class AgentRuntime:
         self.history_store = audit_target if hasattr(audit_target, "load_context") else None
         self.max_history_messages = max(2, max_history_messages)
         self.max_tool_steps = max(1, max_tool_steps)
+        self.memory_service = memory_service
         self._history: dict[tuple[str, str], list[ChatMessage]] = defaultdict(list)
 
     async def stream_response(
@@ -134,7 +137,11 @@ class AgentRuntime:
             definition for definition in self.registry.definitions()
             if definition.get("function", {}).get("name") not in ephemeral_l0
         ]
-        system_prompt = compose_system_prompt(character_id, tool_definitions)
+        memory_context = ""
+        if self.memory_service is not None:
+            recent_text = " ".join(str(item.get("content") or "") for item in prior[-4:])
+            memory_context = self.memory_service.context(normalized, recent_text)
+        system_prompt = compose_system_prompt(character_id, tool_definitions, memory_context)
 
         while True:
             chunks: list[str] = []
