@@ -4,7 +4,8 @@ import {
   AgentState,
   CharacterId,
   ToolConfirmationRequiredData,
-  ToolResultData
+  ToolResultData,
+  InteractionType
 } from '../generated/contracts';
 
 export class AgentClientError extends Error {
@@ -40,13 +41,23 @@ export class AgentClient {
   private socket: WebSocket | null = null;
   private connecting: Promise<WebSocket> | null = null;
   private pending = new Map<string, PendingRequest>();
+  private intentionalDisconnect = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    window.agentDesktop?.onBackendStatus?.((status) => {
+      if (status.state === 'ready' && !this.intentionalDisconnect) void this.ensureSocket().catch(() => undefined);
+    });
+  }
 
   sendMessage(
     sessionId: string,
     characterId: CharacterId,
     content: string,
-    handlers: AgentMessageHandlers = {}
+    handlers: AgentMessageHandlers = {},
+    interactionType: InteractionType = 'message'
   ): AgentRequest {
+    this.intentionalDisconnect = false;
     const requestId = uuidv4();
     let resolve!: (content: string) => void;
     let reject!: (error: AgentClientError) => void;
@@ -60,7 +71,8 @@ export class AgentClient {
       .then((socket) => {
         socket.send(JSON.stringify(this.envelope('client.message', sessionId, requestId, {
           content,
-          character_id: characterId
+          character_id: characterId,
+          interaction_type: interactionType
         })));
       })
       .catch((error) => {
@@ -89,6 +101,8 @@ export class AgentClient {
   }
 
   disconnect(): void {
+    this.intentionalDisconnect = true;
+    if (this.reconnectTimer !== null) globalThis.clearTimeout(this.reconnectTimer);
     this.socket?.close();
     this.socket = null;
     this.connecting = null;
@@ -111,7 +125,12 @@ export class AgentClient {
       socket.addEventListener('message', (event) => this.handleMessage(event));
       socket.addEventListener('close', () => {
         if (this.socket === socket) this.socket = null;
-        this.rejectAll('BACKEND_DISCONNECTED', 'Backend connection closed');
+        if (!this.intentionalDisconnect) {
+          void this.recoverPending();
+          this.reconnectTimer = globalThis.setTimeout(() => {
+            void this.ensureSocket().catch(() => undefined);
+          }, 500);
+        }
       });
       this.socket = socket;
       return socket;
@@ -124,6 +143,32 @@ export class AgentClient {
     }
   }
 
+  private async recoverPending(): Promise<void> {
+    for (let attempt = 0; attempt < 6 && this.pending.size; attempt += 1) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, Math.min(250 * (2 ** attempt), 4000)));
+      const connection = await window.agentDesktop?.getBackendConnection().catch(() => null);
+      if (!connection) continue;
+      for (const [requestId, pending] of [...this.pending]) {
+        try {
+          const response = await fetch(connection.httpUrl + '/api/v1/requests/' + encodeURIComponent(requestId), {
+            headers: { Authorization: 'Bearer ' + connection.token }
+          });
+          if (!response.ok) continue;
+          const request = await response.json() as { status: string; assistant_content?: string | null; error_code?: string | null };
+          if (request.status === 'completed' && request.assistant_content) {
+            this.pending.delete(requestId);
+            pending.resolve(request.assistant_content);
+          } else if (['interrupted', 'cancelled', 'failed'].includes(request.status)) {
+            this.pending.delete(requestId);
+            pending.reject(new AgentClientError(request.error_code || 'BACKEND_DISCONNECTED', '请求因后端连接中断而停止，请手动重试。', true));
+          }
+        } catch {
+          // The next backoff attempt may observe the restarted sidecar.
+        }
+      }
+    }
+    if (this.pending.size) this.rejectAll('BACKEND_DISCONNECTED', '后端连接已中断，请手动重试。');
+  }
   private handleMessage(message: MessageEvent): void {
     let event: AgentEvent;
     try {

@@ -2,16 +2,17 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { UserIcon, SparklesIcon, SpeakerWaveIcon, SpeakerXMarkIcon, MusicalNoteIcon } from '@heroicons/react/24/solid';
 import { v4 as uuidv4 } from 'uuid';
 
-import { AvatarMode, AvatarStage, loadAvatarMode, saveAvatarMode } from './features/avatar';
+import { AvatarMode, AvatarStage, loadAvatarMode } from './features/avatar';
 import { DiagnosticsPanel } from './features/diagnostics';
-import { ConversationPanel, appendMessage, createMessageHistory, MessageHistory, removeMessage, upsertModelMessage } from './features/conversation';
+import { ConversationPanel, SessionDrawer, appendMessage, createMessageHistory, MessageHistory, removeMessage, upsertModelMessage } from './features/conversation';
 import { PcmRecorder, useAudioPlayback } from './features/speech';
 import { BLACK_CAT_CONFIG, SOLDIER_CONFIG, WHITE_CAT_CONFIG } from './constants';
 import { CatConfig, CatType } from './types';
 import { AgentClient, AgentClientError } from './services/agentClient';
 import { ToolConfirmationModal } from './components/ToolConfirmationModal';
-import { AgentState, ToolConfirmationRequiredData } from './generated/contracts';
+import { AgentState, InteractionType, PersistedMessage, SessionSummary, ToolConfirmationRequiredData } from './generated/contracts';
 import { SpeechClient, SpeechClientError } from './services/speechClient';
+import { SessionClient } from './services/sessionClient';
 
 function App() {
   const [currentCat, setCurrentCat] = useState<CatConfig>(BLACK_CAT_CONFIG);
@@ -19,6 +20,11 @@ function App() {
   const activeCharacter = avatarMode === 'three' ? SOLDIER_CONFIG : currentCat;
   const [agentState, setAgentState] = useState<AgentState>('idle');
   const [messages, setMessages] = useState<MessageHistory>(createMessageHistory);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [archivedSessions, setArchivedSessions] = useState<SessionSummary[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
@@ -44,11 +50,8 @@ function App() {
 
   const agentClientRef = useRef(new AgentClient());
   const activeRequestRef = useRef<{ requestId: string; sessionId: string } | null>(null);
-  const sessionIdsRef = useRef<Record<CatType, string>>({
-    [CatType.BLACK]: uuidv4(),
-    [CatType.WHITE]: uuidv4(),
-    [CatType.SOLDIER]: uuidv4()
-  });
+  const sessionClientRef = useRef(new SessionClient());
+  const activeSessionIdRef = useRef<string | null>(null);
   const speechClientRef = useRef(new SpeechClient());
   const recorderRef = useRef(new PcmRecorder());
   const recordingRef = useRef(false);
@@ -77,7 +80,68 @@ function App() {
     recordingRef.current = false;
     void recorderRef.current.cancel();
   }, []);
-  useEffect(() => saveAvatarMode(avatarMode), [avatarMode]);
+  const refreshSessions = useCallback(async () => {
+    const [active, archived] = await Promise.all([
+      sessionClientRef.current.listSessions(false),
+      sessionClientRef.current.listSessions(true)
+    ]);
+    setSessions(active);
+    setArchivedSessions(archived);
+    return active;
+  }, []);
+
+  const loadSessionMessages = useCallback(async (sessionId: string) => {
+    const persisted = await sessionClientRef.current.messages(sessionId);
+    const loaded = persisted.map((message: PersistedMessage) => ({
+      id: message.id,
+      role: message.role === 'assistant' ? 'model' as const : 'user' as const,
+      text: message.content,
+      characterId: message.character_id as CatType
+    }));
+    setMessages(loaded);
+    setHasGreeted({
+      [CatType.BLACK]: loaded.some((message) => message.role === 'model' && message.characterId === CatType.BLACK),
+      [CatType.WHITE]: loaded.some((message) => message.role === 'model' && message.characterId === CatType.WHITE),
+      [CatType.SOLDIER]: loaded.some((message) => message.role === 'model' && message.characterId === CatType.SOLDIER)
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [config, active] = await Promise.all([sessionClientRef.current.config(), refreshSessions()]);
+        if (cancelled) return;
+        setAvatarMode(config.avatar_mode);
+        setCurrentCat(config.css_character === CatType.WHITE ? WHITE_CAT_CONFIG : BLACK_CAT_CONFIG);
+        setVolume(config.volume);
+        let sessionId = config.active_session_id && active.some((item) => item.id === config.active_session_id)
+          ? config.active_session_id : active[0]?.id;
+        if (!sessionId) {
+          const created = await sessionClientRef.current.createSession();
+          sessionId = created.id;
+          await refreshSessions();
+        }
+        if (cancelled) return;
+        activeSessionIdRef.current = sessionId;
+        setActiveSessionId(sessionId);
+        await loadSessionMessages(sessionId);
+        if (!cancelled) setSettingsReady(true);
+      } catch (error) {
+        console.warn('会话数据暂时不可用', error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loadSessionMessages, refreshSessions]);
+
+  useEffect(() => {
+    if (!settingsReady) return;
+    void sessionClientRef.current.updateConfig({
+      avatar_mode: avatarMode,
+      css_character: currentCat.type === CatType.WHITE ? 'WHITE' : 'BLACK',
+      volume
+    }).catch(() => undefined);
+  }, [avatarMode, currentCat.type, settingsReady, volume]);
 
   const speak = useCallback(async (text: string, cat: CatConfig) => {
     setIsProcessingVoice(true);
@@ -97,8 +161,9 @@ function App() {
       setIsProcessingVoice(false);
     }
   }, [audioContextRef, playAudioBuffer]);
-  const generate = useCallback(async (prompt: string, cat: CatConfig, speakResult = true) => {
-    const sessionId = sessionIdsRef.current[cat.type];
+  const generate = useCallback(async (prompt: string, cat: CatConfig, speakResult = true, interactionType: InteractionType = 'message') => {
+    const sessionId = activeSessionIdRef.current;
+    if (!sessionId) throw new Error('会话尚未就绪');
     let streamed = '';
     const request = agentClientRef.current.sendMessage(sessionId, cat.type, prompt, {
       onState: setAgentState,
@@ -119,6 +184,7 @@ function App() {
     try {
       const response = await request.completion;
       setMessages((previous) => upsertModelMessage(previous, cat.type, request.requestId, response));
+      void refreshSessions().catch(() => undefined);
       if (speakResult) await speak(response, cat);
       return response;
     } catch (error) {
@@ -134,7 +200,7 @@ function App() {
       if (activeRequestRef.current?.requestId === request.requestId) activeRequestRef.current = null;
       setPendingToolConfirmation((previous) => previous?.requestId === request.requestId ? null : previous);
     }
-  }, [speak]);
+  }, [refreshSessions, speak]);
 
   const handleStart = async () => {
     setIsStarted(true);
@@ -145,14 +211,14 @@ function App() {
 
   useEffect(() => {
     const catType = activeCharacter.type;
-    if (!isStarted || hasGreeted[catType] || greetingInProgressRef.current.has(catType)) return;
+    if (!isStarted || !settingsReady || hasGreeted[catType] || greetingInProgressRef.current.has(catType)) return;
     const timer = window.setTimeout(() => {
       greetingInProgressRef.current.add(catType);
       setHasGreeted((previous) => ({ ...previous, [catType]: true }));
       setIsLoadingText(true);
       setIsProcessingVoice(true);
       setAgentState('thinking');
-      void generate('这是你第一次见到主人，请用符合你性格的方式简短打招呼并介绍自己。', activeCharacter)
+      void generate('这是你第一次见到主人，请用符合你性格的方式简短打招呼并介绍自己。', activeCharacter, true, 'greeting')
         .catch(() => undefined)
         .finally(() => {
           greetingInProgressRef.current.delete(catType);
@@ -161,7 +227,7 @@ function App() {
         });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [activeCharacter, generate, hasGreeted, isStarted]);
+  }, [activeCharacter, generate, hasGreeted, isStarted, settingsReady]);
 
   const handleToggleCat = () => {
     setCurrentCat((previous) => previous.type === CatType.BLACK ? WHITE_CAT_CONFIG : BLACK_CAT_CONFIG);
@@ -198,7 +264,7 @@ function App() {
     setAgentState('thinking');
     setIsProcessingVoice(true);
     try {
-      await generate('请唱一小段原创、轻松可爱的短歌，不要引用现有歌曲歌词。', cat);
+      await generate('请唱一小段原创、轻松可爱的短歌，不要引用现有歌曲歌词。', cat, true, 'sing');
     } catch {
       setIsSinging(false);
     } finally {
@@ -216,7 +282,7 @@ function App() {
     setIsLoadingText(true);
     setIsProcessingVoice(true);
     try {
-      await generate('主人给你投喂了美味的小鱼干，请简短表达感谢。', cat);
+      await generate('主人给你投喂了美味的小鱼干，请简短表达感谢。', cat, true, 'feed');
     } catch {
       // The generated error message is already displayed.
     } finally {
@@ -298,6 +364,44 @@ function App() {
     await resetPlayback();
   };
 
+  const selectSession = useCallback(async (sessionId: string) => {
+    await handleInterrupt();
+    setSettingsReady(false);
+    activeSessionIdRef.current = sessionId;
+    setActiveSessionId(sessionId);
+    setMessages(createMessageHistory());
+    await loadSessionMessages(sessionId);
+    setSettingsReady(true);
+    await sessionClientRef.current.updateConfig({ active_session_id: sessionId });
+    setSessionDrawerOpen(false);
+  }, [loadSessionMessages]);
+
+  const createSession = useCallback(async () => {
+    await handleInterrupt();
+    const created = await sessionClientRef.current.createSession();
+    await refreshSessions();
+    await selectSession(created.id);
+  }, [refreshSessions, selectSession]);
+
+  const renameSession = useCallback(async (sessionId: string, title: string) => {
+    await sessionClientRef.current.updateSession(sessionId, { title });
+    await refreshSessions();
+  }, [refreshSessions]);
+
+  const archiveSession = useCallback(async (sessionId: string) => {
+    await handleInterrupt();
+    await sessionClientRef.current.updateSession(sessionId, { archived: true });
+    const remaining = await refreshSessions();
+    if (sessionId === activeSessionIdRef.current) {
+      if (remaining.length) await selectSession(remaining[0].id);
+      else await createSession();
+    }
+  }, [createSession, refreshSessions, selectSession]);
+
+  const restoreSession = useCallback(async (sessionId: string) => {
+    await sessionClientRef.current.updateSession(sessionId, { archived: false });
+    await refreshSessions();
+  }, [refreshSessions]);
   const isThinking = isLoadingText || isProcessingVoice;
   const showInterrupt = isThinking || isSpeaking;
 
@@ -317,7 +421,7 @@ function App() {
       )}
 
       <div className="w-full max-w-md px-6 py-4 flex justify-between items-center z-20 flex-none">
-        <h1 className="text-2xl font-bold text-orange-600 tracking-wider flex items-center gap-2"><span>🐾</span>GARFIELD CHAT</h1>
+        <div className="flex items-center gap-2"><button type="button" onClick={() => setSessionDrawerOpen(true)} className="rounded-lg bg-white px-2 py-1 text-xl shadow" title="会话列表">☰</button><h1 className="text-xl font-bold text-orange-600 tracking-wider flex items-center gap-2"><span>🐾</span>GARFIELD CHAT</h1></div>
         <button
           onClick={handleToggleCat}
           disabled={showInterrupt || avatarMode === 'three'}
@@ -342,6 +446,19 @@ function App() {
         </button>
       </div>
 
+      <SessionDrawer
+        open={sessionDrawerOpen}
+        sessions={sessions}
+        archivedSessions={archivedSessions}
+        activeSessionId={activeSessionId}
+        onClose={() => setSessionDrawerOpen(false)}
+        onCreate={() => void createSession()}
+        onSelect={(id) => void selectSession(id)}
+        onRename={(id, title) => void renameSession(id, title)}
+        onArchive={(id) => void archiveSession(id)}
+        onRestore={(id) => void restoreSession(id)}
+      />
+
       <DiagnosticsPanel />
 
       <div className="flex-1 w-full max-w-md flex flex-col relative z-10">
@@ -356,7 +473,7 @@ function App() {
             onModeChange={setAvatarMode}
           />        </div>
         <ConversationPanel
-          messages={messages[activeCharacter.type]}
+          messages={messages}
           inputText={inputText}
           isListening={isListening}
           isProcessingVoice={isProcessingVoice}

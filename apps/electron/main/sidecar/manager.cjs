@@ -65,6 +65,7 @@ class SidecarManager extends EventEmitter {
     super();
     this.rootDir = options.rootDir || process.cwd();
     this.logDir = options.logDir || path.join(this.rootDir, 'backend', 'logs');
+    this.dataDir = options.dataDir || path.join(this.rootDir, 'backend', 'data');
     this.pythonCommand = options.pythonCommand || process.env.AGENT_PYTHON || 'python';
     this.spawnImpl = options.spawnImpl || spawn;
     this.healthTimeoutMs = options.healthTimeoutMs || 15000;
@@ -142,6 +143,7 @@ class SidecarManager extends EventEmitter {
       AGENT_PORT: String(port),
       AGENT_AUTH_TOKEN: token,
       AGENT_LOG_DIR: this.logDir,
+      AGENT_DATA_DIR: this.dataDir,
       ...(this.envFile ? { AGENT_ENV_FILE: this.envFile } : {})
     };
     const child = this.spawnImpl(

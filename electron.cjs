@@ -49,26 +49,6 @@ function setupIpc() {
   });
 }
 
-function ensureRuntimeConfigFile() {
-  try {
-    const userDir = app.getPath('userData');
-    const cfgPath = path.join(userDir, 'runtime-config.json');
-    if (!fs.existsSync(cfgPath)) {
-      fs.mkdirSync(userDir, { recursive: true });
-      const defaultCfg = {
-        xunfei: {
-          sparkTTSVcnMale: 'x5_lingfeiyi_flow',
-          sparkTTSVcnFemale: 'x5_lingxiaoxuan_flow'
-        }
-      };
-      fs.writeFileSync(cfgPath, JSON.stringify(defaultCfg, null, 2), 'utf-8');
-    }
-    return cfgPath;
-  } catch (e) {
-    return null;
-  }
-}
-
 function getContentType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   switch (ext) {
@@ -100,28 +80,6 @@ function startStaticServer(distDir) {
           res.end('Forbidden');
           return;
         }
-
-        // 运行时配置：优先从用户目录读取，便于打包后直接修改音色等参数
-        if (pathname === '/runtime-config.json') {
-          const cfgPath = ensureRuntimeConfigFile();
-          if (!cfgPath) {
-            res.statusCode = 404;
-            res.end('Not Found');
-            return;
-          }
-          fs.readFile(cfgPath, 'utf-8', (err, text) => {
-            if (err) {
-              res.statusCode = 500;
-              res.end('Internal Server Error');
-              return;
-            }
-            res.statusCode = 200;
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(text);
-          });
-          return;
-        }
-
         const relPath = pathname === '/' ? '/index.html' : pathname;
         const candidatePath = path.join(distDir, relPath);
 
@@ -189,12 +147,11 @@ async function createWindow() {
 
   const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
-  // 开发环境加载本地服务器，生产环境通过本地 http server 加载 dist（避免 file:// origin 为 null）
+  // 开发环境加载本地服务器，生产环境通过本地 HTTP server 加载 dist。
   if (isDev) {
     win.loadURL('http://localhost:3000');
     win.webContents.openDevTools();
   } else {
-    ensureRuntimeConfigFile();
     const distDir = path.join(__dirname, 'dist');
     const { port } = await startStaticServer(distDir);
     win.loadURL(`http://127.0.0.1:${port}/`);
@@ -206,6 +163,7 @@ app.whenReady().then(async () => {
   sidecarManager = new SidecarManager({
     rootDir: app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked') : __dirname,
     logDir: path.join(app.getPath('userData'), 'logs', 'backend'),
+    dataDir: path.join(app.getPath('userData'), 'data'),
     envFile: app.isPackaged
       ? path.join(app.getPath('appData'), 'Garfield Chat', 'backend.env')
       : path.join(__dirname, 'backend', '.env.local'),

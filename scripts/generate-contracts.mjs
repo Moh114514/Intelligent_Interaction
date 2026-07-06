@@ -7,10 +7,12 @@ const readJson = async (path) => JSON.parse(await readFile(resolve(root, path), 
 export const normalizeText = (value) => value.replace(/\r\n/g, '\n');
 
 export async function renderContracts() {
-  const [states, events, tools, audio] = await Promise.all([
+  const [states, events, tools, audio, persistence] = await Promise.all([
     readJson('contracts/agent-states.json'),
     readJson('contracts/events.schema.json'),
-    readJson('contracts/tools.schema.json')
+    readJson('contracts/tools.schema.json'),
+    readJson('contracts/audio.schema.json'),
+    readJson('contracts/persistence.schema.json')
   ]);
   const stateValues = states.enum;
   const eventValues = events.properties.type.enum;
@@ -23,7 +25,8 @@ export async function renderContracts() {
 `export type AgentEventType = ${union(eventValues)};\n` +
 `export type CharacterId = ${union(characterValues)};\n` +
 `export type ToolRiskLevel = ${union(riskValues)};\n\n` +
-`export interface ClientMessageData { content: string; character_id: CharacterId; }\n` +
+`export type InteractionType = 'message' | 'greeting' | 'feed' | 'sing';
+export interface ClientMessageData { content: string; character_id: CharacterId; interaction_type?: InteractionType; }\n` +
 `export interface AgentStateData { state: AgentState; }\n` +
 `export interface AssistantDeltaData { delta: string; }\n` +
 `export interface AssistantMessageData { content: string; }\n\n` +
@@ -32,6 +35,13 @@ export interface ToolConfirmationRequiredData { confirmation_id: string; tool_ca
 `export interface ToolConfirmationResponseData { confirmation_id: string; approved: boolean; }\n` +
 `export type ToolResultStatus = 'succeeded' | 'denied' | 'failed' | 'timed_out' | 'cancelled';\n` +
 `export interface ToolResultData { tool_call_id: string; tool_name: string; status: ToolResultStatus; summary: string; }\n\n` +`export interface AsrResponse { text: string; language: string; duration_ms: number; sample_rate: 16000; channels: 1; }\n` +`export interface TtsRequest { text: string; character_id: CharacterId; }\n` +`export interface TtsResponse { audio_id: string; mime_type: 'audio/wav'; sample_rate: number; channels: number; expires_at: string; }\n\n` +
+`export interface SessionSummary { id: string; title: string; summary: string; archived: boolean; archived_at?: string | null; created_at: string; updated_at: string; }
+export interface PersistedMessage { id: string; request_id: string; role: 'user' | 'assistant'; character_id: CharacterId; content: string; created_at: string; }
+export interface UserConfig { active_session_id: string | null; avatar_mode: 'three' | 'css'; css_character: 'BLACK' | 'WHITE'; volume: number; }
+export type PersistedRequestStatus = 'running' | 'confirming' | 'completed' | 'cancelled' | 'failed' | 'interrupted';
+export interface PersistedRequest { request_id: string; session_id: string; character_id: CharacterId; status: PersistedRequestStatus; error_code?: string | null; assistant_content?: string | null; }
+
+` +
 `export interface AgentEvent<TData extends Record<string, unknown> = Record<string, unknown>> {\n` +
 `  type: AgentEventType;\n  version: '1.0';\n  session_id: string;\n  request_id: string;\n  timestamp: string;\n  data: TData;\n}\n\n` +
 `export interface AgentError {\n  error_code: string;\n  message: string;\n  recoverable: boolean;\n  request_id: string;\n  details?: Record<string, unknown>;\n}\n`;
@@ -43,7 +53,7 @@ export interface ToolConfirmationRequiredData { confirmation_id: string; tool_ca
 `class AgentEventType(str, Enum):\n${pyList(eventValues)}\n\n` +
 `class CharacterId(str, Enum):\n${pyList(characterValues)}\n\n` +
 `class ToolRiskLevel(str, Enum):\n${pyList(riskValues)}\n\n` +
-`class ClientMessageData(BaseModel):\n    content: str = Field(min_length=1)\n    character_id: CharacterId\n\n` +
+`class ClientMessageData(BaseModel):\n    content: str = Field(min_length=1)\n    character_id: CharacterId\n    interaction_type: str = Field(default="message", pattern=r"^(message|greeting|feed|sing)$")\n\n` +
 `class AgentStateData(BaseModel):\n    state: AgentState\n\n` +
 `class AssistantDeltaData(BaseModel):\n    delta: str = Field(min_length=1)\n\n` +
 `class AssistantMessageData(BaseModel):\n    content: str = Field(min_length=1)\n\n` +

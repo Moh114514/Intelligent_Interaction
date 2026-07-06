@@ -17,7 +17,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ messages }) => {
         <div className="w-full max-w-md mx-auto h-56 sm:h-64 overflow-y-auto scrollbar-hide p-4 space-y-3 bg-white/40 backdrop-blur-md rounded-2xl border border-white/60 shadow-lg transition-all">
             {messages.length === 0 && (
                 <div className="h-full flex items-center justify-center text-gray-500 text-sm italic opacity-70">
-                    Start a conversation...
+                    开始一段新对话…
                 </div>
             )}
             {messages.map((msg) => (
@@ -31,6 +31,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ messages }) => {
                             ? 'bg-orange-500 text-white rounded-br-none' 
                             : 'bg-white text-gray-800 border border-gray-100 rounded-bl-none'}
                     `}>
+                        {msg.role === 'model' && msg.characterId && <div className="mb-1 text-[10px] font-bold uppercase text-orange-500">{msg.characterId === 'BLACK' ? 'Kuro' : msg.characterId === 'WHITE' ? 'Shiro' : 'Vanguard'}</div>}
                         {msg.text}
                     </div>
                 </div>

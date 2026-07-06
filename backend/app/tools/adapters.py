@@ -151,6 +151,17 @@ class FileAdapter:
             raise ToolError("TOOL_FILE_NOT_FOUND", "The requested file does not exist")
         return target
 
+    def _resolve_create_target(self, path: str) -> Path:
+        candidate = Path(path.strip()).expanduser()
+        if not path.strip():
+            raise ToolError("TOOL_PATH_FORBIDDEN", "A target filename or absolute path is required")
+        if candidate.is_absolute():
+            return self._validate_path(candidate, must_exist=False)
+        target = (self.root / candidate).resolve(strict=False)
+        if target != self.root and self.root not in target.parents:
+            raise ToolError("TOOL_PATH_FORBIDDEN", "Relative create paths must stay inside the shared directory")
+        return self._validate_path(target, must_exist=False)
+
     @staticmethod
     def _fingerprint(path: Path) -> str:
         info = path.stat()
@@ -368,14 +379,14 @@ class FileAdapter:
         return encoded
 
     def create_details(self, path: str, content: str) -> dict[str, Any]:
-        target = self._validate_path(Path(path), must_exist=False)
+        target = self._resolve_create_target(path)
         if target.suffix.casefold() not in TEXT_EXTENSIONS or not target.parent.is_dir():
             raise ToolError("TOOL_FILE_TYPE_FORBIDDEN", "Only approved text files in existing directories can be created")
         self._validate_content(content)
         return {"target": self._display_path(target), "operation": "create", "content": content, "content_length": len(content), "will_create_backup": False}
 
     def create_text(self, path: str, content: str) -> str:
-        target = self._validate_path(Path(path), must_exist=False)
+        target = self._resolve_create_target(path)
         if target.suffix.casefold() not in TEXT_EXTENSIONS or not target.parent.is_dir():
             raise ToolError("TOOL_FILE_TYPE_FORBIDDEN", "Only approved text files in existing directories can be created")
         if target.exists():

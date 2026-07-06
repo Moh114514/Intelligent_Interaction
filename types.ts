@@ -8,6 +8,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'model';
   text: string;
+  characterId?: CatType;
 }
 
 export interface CatConfig {

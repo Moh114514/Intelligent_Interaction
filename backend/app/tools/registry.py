@@ -126,7 +126,7 @@ def create_default_registry(
         lambda args: file_adapter.reference_details(args["file_id"]),
     )
     add(
-        "files.create_text", "Create a new UTF-8 text file at an approved absolute path. User confirmation is required.", "L2",
+        "files.create_text", "Create a new UTF-8 text file. A relative path uses the Garfield Chat Shared directory; an approved absolute path is also accepted. User confirmation of the exact target and full content is required.", "L2",
         object_schema({"path": {"type": "string", "minLength": 3, "maxLength": 1024}, "content": text}, ["path", "content"]),
         lambda args: file_adapter.create_text(args["path"], args["content"]), lambda args: f"\u65b0\u5efa\u6587\u672c\u6587\u4ef6\uff1a{file_adapter.create_details(args['path'], args['content'])['target']}",
         lambda args: file_adapter.create_details(args["path"], args["content"]),

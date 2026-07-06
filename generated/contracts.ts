@@ -5,7 +5,8 @@ export type AgentEventType = 'client.message' | 'agent.state' | 'assistant.delta
 export type CharacterId = 'BLACK' | 'WHITE' | 'SOLDIER';
 export type ToolRiskLevel = 'L0' | 'L1' | 'L2' | 'L3';
 
-export interface ClientMessageData { content: string; character_id: CharacterId; }
+export type InteractionType = 'message' | 'greeting' | 'feed' | 'sing';
+export interface ClientMessageData { content: string; character_id: CharacterId; interaction_type?: InteractionType; }
 export interface AgentStateData { state: AgentState; }
 export interface AssistantDeltaData { delta: string; }
 export interface AssistantMessageData { content: string; }
@@ -20,6 +21,12 @@ export interface ToolResultData { tool_call_id: string; tool_name: string; statu
 export interface AsrResponse { text: string; language: string; duration_ms: number; sample_rate: 16000; channels: 1; }
 export interface TtsRequest { text: string; character_id: CharacterId; }
 export interface TtsResponse { audio_id: string; mime_type: 'audio/wav'; sample_rate: number; channels: number; expires_at: string; }
+
+export interface SessionSummary { id: string; title: string; summary: string; archived: boolean; archived_at?: string | null; created_at: string; updated_at: string; }
+export interface PersistedMessage { id: string; request_id: string; role: 'user' | 'assistant'; character_id: CharacterId; content: string; created_at: string; }
+export interface UserConfig { active_session_id: string | null; avatar_mode: 'three' | 'css'; css_character: 'BLACK' | 'WHITE'; volume: number; }
+export type PersistedRequestStatus = 'running' | 'confirming' | 'completed' | 'cancelled' | 'failed' | 'interrupted';
+export interface PersistedRequest { request_id: string; session_id: string; character_id: CharacterId; status: PersistedRequestStatus; error_code?: string | null; assistant_content?: string | null; }
 
 export interface AgentEvent<TData extends Record<string, unknown> = Record<string, unknown>> {
   type: AgentEventType;

@@ -10,6 +10,7 @@ class Settings:
     port: int
     auth_token: str
     log_dir: Path
+    data_dir: Path | None = None
     log_level: str = "INFO"
     llm_api_key: str = ""
     llm_base_url: str = "https://api.deepseek.com"
@@ -53,7 +54,8 @@ class Settings:
             raise ValueError("AGENT_AUTH_TOKEN must contain at least 32 characters")
         return cls(
             host=host, port=int(os.getenv("AGENT_PORT", "8765")), auth_token=token,
-            log_dir=Path(os.getenv("AGENT_LOG_DIR", "backend/logs")), log_level=os.getenv("AGENT_LOG_LEVEL", "INFO").upper(),
+            log_dir=Path(os.getenv("AGENT_LOG_DIR", "backend/logs")), data_dir=Path(os.getenv("AGENT_DATA_DIR", "backend/data")),
+            log_level=os.getenv("AGENT_LOG_LEVEL", "INFO").upper(),
             llm_api_key=os.getenv("LLM_API_KEY", ""), llm_base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
             llm_model=os.getenv("LLM_MODEL", "deepseek-v4-flash"), llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
             llm_max_history_messages=max(2, int(os.getenv("LLM_MAX_HISTORY_MESSAGES", "20"))),
